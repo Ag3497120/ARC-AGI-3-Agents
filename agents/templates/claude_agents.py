@@ -275,8 +275,7 @@ class ClaudeCodeAgent(Agent):
                         prompt=self.current_prompt,
                         messages=self.captured_messages,
                         parsed_action=parsed_action,
-                        total_cost_usd=cost_usd,
-                        cumulative_cost_usd=self.cumulative_cost_usd
+                        total_cost_usd=cost_usd
                     )
                 except Exception as e:
                     logger.error(f"Failed to save step recording: {e}")

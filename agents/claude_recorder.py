@@ -33,8 +33,7 @@ class ClaudeCodeRecorder:
         prompt: str,
         messages: list[Any],
         parsed_action: dict[str, Any],
-        total_cost_usd: float,
-        cumulative_cost_usd: float
+        total_cost_usd: float
     ) -> None:
         try:
             timestamp = datetime.now(timezone.utc).isoformat()
@@ -47,8 +46,7 @@ class ClaudeCodeRecorder:
                 "prompt": prompt,
                 "messages": formatted_messages,
                 "parsed_action": parsed_action,
-                "cost_usd": total_cost_usd,
-                "cumulative_cost_usd": cumulative_cost_usd
+                "cost_usd": total_cost_usd
             }
             
             step_filename = self.output_dir / f"step_{step:03d}.json"
@@ -83,6 +81,7 @@ class ClaudeCodeRecorder:
                             formatted.append({
                                 "message": message_index,
                                 "type": "tool_call",
+                                "tool_call_id": block.id,
                                 "tool_name": block.name,
                                 "tool_input": block.input
                             })
