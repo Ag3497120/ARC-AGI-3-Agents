@@ -187,14 +187,21 @@ class ClaudeCodeAgent(Agent):
                         self.result_message = message
                         if message.is_error:
                             logger.error(f"ResultMessage indicates error occurred during query")
-                            if not action_taken:
-                                raise RuntimeError("Query failed with error - check logs for details")
                     
                     if isinstance(message, AssistantMessage) and not action_taken:
                         for block in message.content:
                             if hasattr(block, "text") and block.text:
                                 reasoning_parts.append(block.text)
                                 logger.info(f"Claude reasoning: {block.text[:100]}...")
+                                
+                                if "credit balance is too low" in block.text.lower():
+                                    logger.error("FATAL: Credit balance too low - stopping immediately")
+                                    import os
+                                    print("\n" + "="*80)
+                                    print("\033[91m" + "ERROR: Insufficient Anthropic API Credits" + "\033[0m")
+                                    print("Please add credits to your Anthropic account to continue.")
+                                    print("="*80 + "\n")
+                                    os._exit(1)
                             
                             if isinstance(block, ToolUseBlock):
                                 tool_name = block.name
@@ -213,6 +220,8 @@ class ClaudeCodeAgent(Agent):
                                 else:
                                     logger.warning(f"Failed to parse action from tool: {tool_name}")
             except Exception as e:
+                if "credit balance" in str(e).lower():
+                    raise
                 logger.error(f"Error during query execution: {e}")
                 import traceback
                 logger.debug(traceback.format_exc())
@@ -233,7 +242,35 @@ class ClaudeCodeAgent(Agent):
                 for i, result in enumerate(results):
                     if isinstance(result, Exception):
                         logger.warning(f"Pending task {i} raised exception: {result}")
+        except RuntimeError as e:
+            if "credit balance" in str(e).lower():
+                import os
+                for task in asyncio.all_tasks(loop):
+                    task.cancel()
+                try:
+                    loop.run_until_complete(asyncio.gather(*asyncio.all_tasks(loop), return_exceptions=True))
+                except:
+                    pass
+                print("\n" + "="*80)
+                print("\033[91m" + "ERROR: Insufficient Anthropic API Credits" + "\033[0m")
+                print("Please add credits to your Anthropic account to continue.")
+                print("="*80 + "\n")
+                os._exit(1)
+            raise
         except Exception as e:
+            if "credit balance" in str(e).lower():
+                import os
+                for task in asyncio.all_tasks(loop):
+                    task.cancel()
+                try:
+                    loop.run_until_complete(asyncio.gather(*asyncio.all_tasks(loop), return_exceptions=True))
+                except:
+                    pass
+                print("\n" + "="*80)
+                print("\033[91m" + "ERROR: Insufficient Anthropic API Credits" + "\033[0m")
+                print("Please add credits to your Anthropic account to continue.")
+                print("="*80 + "\n")
+                os._exit(1)
             logger.error(f"Error running event loop: {e}")
             import traceback
             logger.debug(traceback.format_exc())
