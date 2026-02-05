@@ -383,7 +383,7 @@ class ClaudeCodeAgent(Agent):
             
             if self.latest_reasoning:
                 action.action_data.__dict__["reasoning"] = {
-                    "thought": self.latest_reasoning[:16000]
+                    "thought": self.latest_reasoning[:16000] # approximaign a maximum of 16kb of reasoning - see https://docs.arcprize.org/api-reference/commands/execute-simple-action-1
                 }
                 logger.debug(f"Added reasoning ({len(self.latest_reasoning)} chars) to action")
             else:
