@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import textwrap
+import uuid
 from typing import Any, Optional
 
 from arcengine import FrameData, GameAction, GameState
@@ -43,6 +44,13 @@ class ClaudeCodeAgent(Agent):
         self.session_id = None
         self.consecutive_errors = 0
         self.mcp_server = create_arc_tools_server(self)
+        self.notes_session_id = str(uuid.uuid4())
+        self.notes_dir = os.path.abspath(f"./game_notes/{self.game_id}_{self.notes_session_id}")
+        os.makedirs(self.notes_dir, exist_ok=True)
+        self.notes_path = os.path.join(self.notes_dir, "notes.md")
+        with open(self.notes_path, 'w') as f:
+            f.write("")
+        logger.info(f"Created notes file: {self.notes_path}")
         self.captured_messages = []
         self.current_prompt = ""
         self.result_message = None
@@ -50,7 +58,8 @@ class ClaudeCodeAgent(Agent):
         if kwargs.get("record", False):
             self.claude_recorder = ClaudeCodeRecorder(
                 game_id=kwargs.get("game_id", "unknown"),
-                agent_name=self.agent_name
+                agent_name=self.agent_name,
+                session_id=self.notes_session_id
             )
         else:
             self.claude_recorder = None
@@ -62,7 +71,7 @@ class ClaudeCodeAgent(Agent):
     def name(self) -> str:
         sanitized_model_name = self.MODEL.replace("/", "-").replace(":", "-")
         return f"{super().name}.{sanitized_model_name}"
-    
+
     def is_done(self, frames: list[FrameData], latest_frame: FrameData) -> bool:
         return any([
             latest_frame.state is GameState.WIN,
@@ -117,7 +126,7 @@ class ClaudeCodeAgent(Agent):
             Current Grid (64x64, values 0-15):
             {grid_str}
             
-            You have access to the following tools:
+            You have access to the following game action tools:
             - reset_game: Reset the game to start over
             - action1_move_up: Execute ACTION1
             - action2_move_down: Execute ACTION2
@@ -126,15 +135,17 @@ class ClaudeCodeAgent(Agent):
             - action5_interact: Execute ACTION5
             - action6_click: Execute ACTION6 with coordinates (x, y) in range 0-63
             - action7_undo: Execute ACTION7 (undo)
-            - read_notes: Read persistent notes about patterns/insights discovered
-            - write_notes: Write persistent notes to remember across turns
-            
-            PERSISTENT MEMORY: You have the option to use read_notes/write_notes to maintain insights across turns.
-            Track patterns, hypotheses, strategies, and what works/doesn't work. 
-            A recommendation is to write the notes upon the initial analysis of the game, if you choose to analyze the game, and then iteratively read and write notes as you play the game, as you think you need to.
-            
-            Before calling a tool, explain your reasoning. Then call exactly ONE tool.
-            Only call tools that are in the available_actions list.
+
+            PERSISTENT SCRATCH PAD: You have a notes file at: {self.notes_path}
+            You can use the built-in Read, Edit, and Write tools to manage this file.
+            Recommended workflow each turn:
+            1. First, Read your notes file to recall your previous insights and strategy.
+            2. Then, Edit the notes file to update with any new observations (use targeted edits, don't rewrite the whole file).
+               Use Write only for the initial creation of the notes file.
+            3. Finally, call exactly ONE game action tool to make your move.
+            Only call game action tools that are in the available_actions list.
+
+            Before calling a game action tool, explain your reasoning.
         """).strip()
 
         strategy_prompt = os.getenv("STRATEGY_PROMPT", "").strip()
@@ -187,6 +198,8 @@ class ClaudeCodeAgent(Agent):
                     model=self.MODEL,
                     mcp_servers={"arc-game-tools": self.mcp_server},
                     permission_mode="bypassPermissions",
+                    cwd=self.notes_dir,
+                    tools=["Read", "Edit", "Write"],
                 )
                 
                 if self.session_id:
@@ -205,8 +218,6 @@ class ClaudeCodeAgent(Agent):
                         if not self.session_id:
                             self.session_id = message.data.get('session_id')
                             logger.info(f"Session started: {self.session_id}")
-                            if self.claude_recorder:
-                                self.claude_recorder.update_session_id(self.session_id)
                         else:
                             resumed_session = message.data.get('session_id')
                             if resumed_session != self.session_id:
@@ -239,24 +250,13 @@ class ClaudeCodeAgent(Agent):
                                 if reasoning_parts:
                                     self.latest_reasoning = " ".join(reasoning_parts)
                                 
-                                non_action_tools = {
-                                    "mcp__arc-game-tools__read_notes",
-                                    "mcp__arc-game-tools__write_notes",
-                                }
-                                
-                                if tool_name in non_action_tools:
-                                    logger.debug(f"Utility tool called: {tool_name}")
-                                    continue
-                                
                                 action_taken = self.parse_action_from_tool(tool_name, block.input)
-                                
+
                                 if action_taken:
                                     if latest_frame.available_actions and action_taken.value not in latest_frame.available_actions:
                                         logger.warning(f"Action {action_taken.name} (value={action_taken.value}) not in available_actions: {latest_frame.available_actions}")
                                     logger.info(f"Parsed action: {action_taken.name}")
                                     break
-                                else:
-                                    logger.warning(f"Failed to parse action from tool: {tool_name}")
             except Exception as e:
                 if "credit balance" in str(e).lower():
                     raise
@@ -370,15 +370,6 @@ class ClaudeCodeAgent(Agent):
         return GameAction.RESET
     
     def parse_action_from_tool(self, tool_name: str, tool_input: dict[str, Any]) -> Optional[GameAction]:
-        non_action_tools = {
-            "mcp__arc-game-tools__read_notes",
-            "mcp__arc-game-tools__write_notes",
-        }
-        
-        if tool_name in non_action_tools:
-            logger.debug(f"Called utility tool: {tool_name} (non-game-action)")
-            return None
-        
         tool_map = {
             "mcp__arc-game-tools__reset_game": GameAction.RESET,
             "mcp__arc-game-tools__action1_move_up": GameAction.ACTION1,
@@ -422,7 +413,7 @@ class ClaudeCodeAgent(Agent):
             
             return action
         
-        logger.warning(f"Unknown tool name: {tool_name}")
+        logger.debug(f"Non-action tool called: {tool_name}")
         return None
     
     def track_tokens_from_result(self, result_message: Any) -> None:

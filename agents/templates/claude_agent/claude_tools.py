@@ -1,6 +1,5 @@
 import json
 import logging
-import os
 from typing import Any, TYPE_CHECKING
 
 from arcengine import FrameData
@@ -240,90 +239,6 @@ def create_arc_tools_server(agent: "ClaudeCodeAgent") -> Any:
             }]
         }
     
-    @tool(
-        "read_notes",
-        "Read the persistent notes about this game session. Contains insights, patterns, and strategies discovered so far.",
-        {}
-    )
-    async def read_notes(args: dict[str, Any]) -> dict[str, Any]:
-        session_id_suffix = f"_{agent.session_id}" if agent.session_id else ""
-        notes_path = f"./game_notes/{agent.game_id}{session_id_suffix}_notes.md"
-        
-        try:
-            if os.path.exists(notes_path):
-                with open(notes_path, 'r') as f:
-                    content = f.read()
-                return {
-                    "content": [{
-                        "type": "text",
-                        "text": content if content else "Notes file exists but is empty."
-                    }]
-                }
-            return {
-                "content": [{
-                    "type": "text",
-                    "text": "No notes yet for this game."
-                }]
-            }
-        except PermissionError as e:
-            logger.error(f"Permission denied reading notes from {notes_path}: {e}")
-            return {
-                "content": [{
-                    "type": "text",
-                    "text": f"Error: Permission denied reading notes file."
-                }],
-                "isError": True
-            }
-        except Exception as e:
-            logger.error(f"Error reading notes from {notes_path}: {e}")
-            return {
-                "content": [{
-                    "type": "text",
-                    "text": f"Error reading notes: {str(e)}"
-                }],
-                "isError": True
-            }
-    
-    @tool(
-        "write_notes",
-        "Update the persistent notes file with new insights, patterns, or strategies. This persists across game steps.",
-        {"notes": str}
-    )
-    async def write_notes(args: dict[str, Any]) -> dict[str, Any]:
-        session_id_suffix = f"_{agent.session_id}" if agent.session_id else ""
-        notes_path = f"./game_notes/{agent.game_id}{session_id_suffix}_notes.md"
-        
-        try:
-            os.makedirs("./game_notes", exist_ok=True)
-            notes_content = args.get("notes", "")
-            with open(notes_path, 'w') as f:
-                f.write(notes_content)
-            logger.info(f"Notes saved to {notes_path}")
-            return {
-                "content": [{
-                    "type": "text",
-                    "text": f"Notes saved successfully ({len(notes_content)} characters)."
-                }]
-            }
-        except PermissionError as e:
-            logger.error(f"Permission denied writing notes to {notes_path}: {e}")
-            return {
-                "content": [{
-                    "type": "text",
-                    "text": f"Error: Permission denied writing notes file."
-                }],
-                "isError": True
-            }
-        except Exception as e:
-            logger.error(f"Error writing notes to {notes_path}: {e}")
-            return {
-                "content": [{
-                    "type": "text",
-                    "text": f"Error writing notes: {str(e)}"
-                }],
-                "isError": True
-            }
-    
     return create_sdk_mcp_server(
         name="arc-game-tools",
         version="1.0.0",
@@ -336,7 +251,5 @@ def create_arc_tools_server(agent: "ClaudeCodeAgent") -> Any:
             action5_interact,
             action6_click,
             action7_undo,
-            read_notes,
-            write_notes,
         ]
     )

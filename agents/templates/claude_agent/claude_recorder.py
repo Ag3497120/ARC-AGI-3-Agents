@@ -16,14 +16,10 @@ class ClaudeCodeRecorder:
     def __init__(self, game_id: str, agent_name: str, session_id: Optional[str] = None):
         self.game_id = game_id
         self.agent_name = agent_name
-        self.session_id = session_id
-        self.temp_id = str(uuid.uuid4())[:8]
-        
+        self.session_id = session_id or str(uuid.uuid4())
+
         recordings_dir = os.getenv("RECORDINGS_DIR", "recordings")
-        if session_id:
-            self.output_dir = Path(recordings_dir) / f"{game_id}_{agent_name}_{session_id}"
-        else:
-            self.output_dir = Path(recordings_dir) / f"{game_id}_{agent_name}_temp_{self.temp_id}"
+        self.output_dir = Path(recordings_dir) / f"{game_id}_{agent_name}_{self.session_id}"
         
         try:
             self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -34,44 +30,6 @@ class ClaudeCodeRecorder:
         except Exception as e:
             logger.error(f"Failed to create recording directory {self.output_dir}: {e}")
             raise
-    
-    def update_session_id(self, session_id: str):
-        if self.session_id == session_id:
-            logger.debug(f"Session ID already set to {session_id}, skipping update")
-            return
-        
-        old_dir = self.output_dir
-        recordings_dir = os.getenv("RECORDINGS_DIR", "recordings")
-        self.session_id = session_id
-        self.output_dir = Path(recordings_dir) / f"{self.game_id}_{self.agent_name}_{session_id}"
-        
-        if old_dir.exists() and old_dir != self.output_dir:
-            try:
-                import shutil
-                if self.output_dir.exists():
-                    logger.warning(f"Target directory {self.output_dir} already exists, will merge contents")
-                    for item in old_dir.iterdir():
-                        shutil.move(str(item), str(self.output_dir))
-                    old_dir.rmdir()
-                else:
-                    shutil.move(str(old_dir), str(self.output_dir))
-                logger.info(f"Moved recordings from {old_dir} to {self.output_dir}")
-            except PermissionError as e:
-                logger.error(f"Permission denied moving directory from {old_dir} to {self.output_dir}: {e}")
-                logger.warning(f"Continuing with old directory {old_dir}")
-                self.output_dir = old_dir
-            except Exception as e:
-                logger.error(f"Failed to move directory from {old_dir} to {self.output_dir}: {e}")
-                logger.warning(f"Continuing with old directory {old_dir}")
-                self.output_dir = old_dir
-        else:
-            try:
-                self.output_dir.mkdir(parents=True, exist_ok=True)
-                logger.info(f"Updated recording directory to: {self.output_dir}")
-            except Exception as e:
-                logger.error(f"Failed to create new recording directory {self.output_dir}: {e}")
-                logger.warning(f"Continuing with old directory {old_dir}")
-                self.output_dir = old_dir
     
     def save_step(
         self,
