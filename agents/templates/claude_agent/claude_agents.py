@@ -136,7 +136,11 @@ class ClaudeCodeAgent(Agent):
             Before calling a tool, explain your reasoning. Then call exactly ONE tool.
             Only call tools that are in the available_actions list.
         """).strip()
-        
+
+        strategy_prompt = os.getenv("STRATEGY_PROMPT", "").strip()
+        if strategy_prompt:
+            prompt += f"\n\n## Strategy Prompt\n{strategy_prompt}"
+
         return prompt
     
     async def prompt_generator(self, latest_frame: FrameData):
