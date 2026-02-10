@@ -15,7 +15,6 @@
 # Recordings
 recordings/*.recording.jsonl
 recordings/*.conversation.chat.md
-recordings/*.conversation.jsonl
 tests/recordings/*.recording.jsonl
 tests/recordings/not-a-recording.txt
 
