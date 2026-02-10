@@ -113,14 +113,26 @@ class ClaudeCodeAgent(Agent):
     def build_game_prompt(self, frames: list[FrameData], latest_frame: FrameData) -> str:
         grid_str = self._format_grid(latest_frame) or "No grid data available"
 
+        # Build the available tools list dynamically from available_actions
+        tool_descriptions = {
+            0: "- reset_game: Reset the game to start over",
+            1: "- action1_move_up: Execute ACTION1",
+            2: "- action2_move_down: Execute ACTION2",
+            3: "- action3_move_left: Execute ACTION3",
+            4: "- action4_move_right: Execute ACTION4",
+            5: "- action5_interact: Execute ACTION5",
+            6: "- action6_click: Execute ACTION6 with coordinates (x, y) in range 0-63",
+            7: "- action7_undo: Execute ACTION7 (undo)",
+        }
         try:
-            available_actions_str = ", ".join(
-                [f"ACTION{a}" if a > 0 else "RESET" for a in latest_frame.available_actions]
-            )
-            if not available_actions_str:
-                logger.warning("No available actions in frame")
+            available_tools_lines = [
+                tool_descriptions[a]
+                for a in latest_frame.available_actions
+                if a in tool_descriptions
+            ]
+            available_tools_str = "\n".join(available_tools_lines) if available_tools_lines else "No actions available"
         except Exception as e:
-            available_actions_str = "ERROR"
+            available_tools_str = "ERROR determining available actions"
             logger.error(f"Failed to format available actions: {e}")
 
         # Build animation history from all previous frames that have grid data
@@ -145,21 +157,13 @@ class ClaudeCodeAgent(Agent):
             Game: {self.game_id}
             Current State: {latest_frame.state.value}
             Levels Completed: {latest_frame.levels_completed}
-            Available Actions: {available_actions_str}
             {animation_section}
 
             Current Grid (64x64, values 0-15):
             {grid_str}
-            
-            You have access to the following game action tools:
-            - reset_game: Reset the game to start over
-            - action1_move_up: Execute ACTION1
-            - action2_move_down: Execute ACTION2
-            - action3_move_left: Execute ACTION3
-            - action4_move_right: Execute ACTION4
-            - action5_interact: Execute ACTION5
-            - action6_click: Execute ACTION6 with coordinates (x, y) in range 0-63
-            - action7_undo: Execute ACTION7 (undo)
+
+            Available game action tools (only these are valid this turn):
+            {available_tools_str}
 
             PERSISTENT SCRATCH PAD: You have a notes file at: {self.notes_path}
             You can use the built-in Read, Edit, and Write tools to manage this file.
