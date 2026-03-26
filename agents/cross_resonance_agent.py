@@ -281,30 +281,7 @@ class CrossResonanceAgent(Agent):
         
         path = []
         
-        # First: revisit markers (in case we need to trigger them again)
-        marker_targets = [t for t in self.interesting_targets 
-                         if t['color'] in (0, 1) and t['cells']]
-        
-        if marker_targets:
-            target_set = set()
-            for t in marker_targets:
-                target_set.update(t['cells'])
-            
-            best_marker_pos = None
-            best_marker_path = None
-            best_overlap = 0
-            
-            for pos, p in reachable.items():
-                overlap = sum(1 for dr, dc in self.player_shape
-                            if (pos[0]+dr, pos[1]+dc) in target_set)
-                if overlap > best_overlap or (overlap == best_overlap and
-                    (best_marker_path is None or len(p) < len(best_marker_path))):
-                    best_overlap = overlap
-                    best_marker_pos = pos
-                    best_marker_path = p
-            
-            if best_marker_path:
-                path.extend(best_marker_path)
+        # Sense already visited markers. Go directly to lock from current position.
         
         # Then: go to lock
         if lock_targets:
