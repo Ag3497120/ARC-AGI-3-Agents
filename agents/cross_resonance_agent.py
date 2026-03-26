@@ -126,7 +126,7 @@ class CrossResonanceAgent(Agent):
         self.sense_plan: List[int] = []
         self.sense_index = 0
         self.sense_observations: List[Dict] = []
-        self.max_sense_steps = 6
+        self.max_sense_steps = 8  # dynamic: as many as needed to reach markers
         
         # Learn
         self.learned_rules: List[JCrossRule] = []
@@ -167,15 +167,20 @@ class CrossResonanceAgent(Agent):
                     'interest': (1.0 / max(count, 1)) * len(cells) * 1000
                 })
         
-        # Find lock-like structures (enclosed regions)
-        c9_upper = [(int(r),int(c)) for r in range(25) for c in range(64) if g[r,c] == 9]
-        if c9_upper:
-            cr = sum(r for r,c in c9_upper) // len(c9_upper)
-            cc = sum(c for r,c in c9_upper) // len(c9_upper)
-            targets.append({
-                'color': 'lock', 'center': (cr, cc), 'cells': c9_upper,
-                'interest': 100
-            })
+        # Find lock-like structures: color 5 enclosed regions (not the border/UI)
+        # Group color 5 cells into clusters
+        c5_cells = [(int(r),int(c)) for r in range(5, 55) for c in range(5, 60) if g[r,c] == 5]
+        if c5_cells:
+            # Find the cluster NOT near the grid edge (the lock, not the border)
+            # Simple: center of mass of color 5 cells away from edges
+            interior_5 = [(r,c) for r,c in c5_cells if 8 < r < 55 and 5 < c < 58]
+            if interior_5:
+                cr5 = sum(r for r,c in interior_5) // len(interior_5)
+                cc5 = sum(c for r,c in interior_5) // len(interior_5)
+                targets.append({
+                    'color': 'lock', 'center': (cr5, cc5), 'cells': interior_5,
+                    'interest': 100
+                })
         
         targets.sort(key=lambda t: -t['interest'])
         self.interesting_targets = targets
@@ -184,17 +189,16 @@ class CrossResonanceAgent(Agent):
     # ── SENSE: go touch interesting things (6 API steps) ──
     
     def _plan_sense(self, grid):
-        """Plan 6 steps to reach the most interesting target."""
+        """Plan route to most interesting target. Dynamic length."""
         if not self.interesting_targets or not self.player_pos:
-            self.sense_plan = [1, 2, 3, 4, 1, 2]  # default exploration
+            self.sense_plan = [1, 2, 3, 4, 1, 2]
             return
         
         reachable = self.world.find_all_reachable(self.player_pos)
         
-        # Find route to top target that overlaps with its cells
         for target in self.interesting_targets:
             if target['color'] == 'lock':
-                continue  # save lock for later
+                continue
             
             best_pos = None
             best_path = None
@@ -211,15 +215,17 @@ class CrossResonanceAgent(Agent):
                     best_path = path
             
             if best_path and best_overlap > 0:
-                self.sense_plan = list(best_path[:self.max_sense_steps])
+                # Use the FULL path to marker, not truncated
+                self.sense_plan = list(best_path)
+                self.max_sense_steps = len(best_path)
                 return
         
-        # Fallback: go toward first target's center
         if self.interesting_targets:
             tc = self.interesting_targets[0]['center']
             closest = min(reachable.keys(),
                 key=lambda p: abs(p[0]-tc[0]) + abs(p[1]-tc[1]))
-            self.sense_plan = list(reachable[closest][:self.max_sense_steps])
+            self.sense_plan = list(reachable[closest])
+            self.max_sense_steps = len(self.sense_plan)
         else:
             self.sense_plan = [1, 2, 3, 4, 1, 2]
     
@@ -278,6 +284,15 @@ class CrossResonanceAgent(Agent):
         
         # Find path to lock target
         lock_targets = [t for t in self.interesting_targets if t['color'] == 'lock']
+        # If no lock found from targets, use color 5 cluster center
+        if not lock_targets and self.interesting_targets:
+            # Look for color 5 enclosed regions directly
+            g = np.array(grid)
+            c5 = [(int(r),int(c)) for r in range(8, 55) for c in range(5, 58) if g[r,c] == 5]
+            if c5:
+                cr5 = sum(r for r,c in c5) // len(c5)
+                cc5 = sum(c for r,c in c5) // len(c5)
+                lock_targets = [{'center': (cr5, cc5)}]
         
         path = []
         
