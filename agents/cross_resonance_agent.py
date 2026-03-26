@@ -238,6 +238,10 @@ class CrossResonanceAgent(Agent):
         if latest_frame.levels_completed != self._prev_levels:
             self._full_reset()
             self._prev_levels = latest_frame.levels_completed
+            # Don't plan yet - this frame might still show the old level grid.
+            # Wait for next frame.
+            self.prev_grid = [row[:] for row in grid]
+            return GameAction.ACTION1  # dummy action, will be ignored
 
         if not self._planned:
             self._plan(grid)
