@@ -10,6 +10,7 @@ from .templates.langgraph_random_agent import LangGraphRandom
 from .templates.langgraph_thinking import LangGraphThinking
 from .templates.llm_agents import LLM, FastLLM, GuidedLLM, ReasoningLLM
 from .templates.multimodal import MultiModalLLM
+from .cross_resonance_agent import CrossResonanceAgent
 from .templates.random_agent import Random
 from .templates.reasoning_agent import ReasoningAgent
 from .templates.smolagents import SmolCodingAgent, SmolVisionAgent
@@ -31,6 +32,7 @@ AVAILABLE_AGENTS["reasoningagent"] = ReasoningAgent
 
 __all__ = [
     "Swarm",
+    "CrossResonanceAgent",
     "Random",
     "LangGraphFunc",
     "LangGraphTextOnly",
