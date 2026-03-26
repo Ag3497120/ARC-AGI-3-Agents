@@ -114,6 +114,16 @@ class CrossResonanceAgent(Agent):
             nr,nc = cr+dr, cc+dc
             if nr<0 or nr>=64 or nc<0 or nc>=64: return False
             if g[nr,nc]==4: return False
+        # Color 9 conflict: player's color 9 part can't overlap non-player color 9
+        # Player bottom (dr >= 0) is color 9
+        for dr,dc in self.player_shape:
+            if dr >= 0:  # bottom part = color 9
+                nr,nc = cr+dr, cc+dc
+                if 0<=nr<64 and 0<=nc<64 and g[nr,nc]==9:
+                    # This cell has color 9 — is it the player's own?
+                    # If we're moving TO this position, the old position's 9s are gone
+                    # So any 9 here is lock/template pattern = CONFLICT
+                    return False
         return True
 
     def _sim(self, g, cr, cc, a):
@@ -194,6 +204,17 @@ class CrossResonanceAgent(Agent):
                 self.action_queue = strat_b[:budget]
         
         import sys; print(f"PLAN: retry={self._retry} budget={budget} strat_a={len(strat_a)} strat_b={len(strat_b)} chosen={len(self.action_queue)} q={self.action_queue[:5]}", file=sys.stderr)
+        # Store lock push direction for fallback
+        if idx.lock_center and self.player_pos:
+            dr = idx.lock_center[0] - self.player_pos[0]
+            dc = idx.lock_center[1] - self.player_pos[1]
+            if abs(dr) >= abs(dc):
+                self._lock_push_dir = 1 if dr < 0 else 2
+            else:
+                self._lock_push_dir = 3 if dc < 0 else 4
+        else:
+            self._lock_push_dir = 1
+        
         self._planned = True
         self._needs_replan = False
 
@@ -253,6 +274,10 @@ class CrossResonanceAgent(Agent):
         action_id = 1
         if self.action_queue:
             action_id = self.action_queue.pop(0)
+        else:
+            # Queue empty. Push toward lock if known.
+            if hasattr(self, "_lock_push_dir") and self._lock_push_dir:
+                action_id = self._lock_push_dir
 
         self.prev_grid = [row[:] for row in grid]
 
