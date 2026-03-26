@@ -280,5 +280,5 @@ class CrossResonanceAgent(Agent):
         action = action_map.get(action_id, GameAction.ACTION1)
         
         rule_name = self.current_rule.name if self.current_rule else 'none'
-        action.reasoning = f"rule={rule_name} queue={len(self.action_queue)} pos={self.player_pos}"
+        action.reasoning = f"rule={rule_name} q={len(self.action_queue)} act={action_id} pos={self.player_pos} phase={self.phase} ri={self.rule_index}"
         return action
