@@ -15,6 +15,7 @@ Usage:
 from .simulator import CrossWorld, CrossCell
 from .shape_eye import ShapeEye
 from .rule_mixer import RuleMixer
+from .cross_sensor import CrossSensor, CrossSnapshot, CrossObject, CrossDescriptor, FrameDiff
 from .primitives import (
     RulePrimitive,
     MazeRule,
@@ -49,4 +50,10 @@ __all__ = [
     'PatternStampRule',
     'ConnectRule',
     'all_primitives',
+    # Cross Sensor
+    'CrossSensor',
+    'CrossSnapshot',
+    'CrossObject',
+    'CrossDescriptor',
+    'FrameDiff',
 ]
