@@ -598,6 +598,7 @@ class CrossResonanceV26(Agent):
         self._rule_learner = RuleLearner() if HAS_RULE_LEARNER else None
         self._dynamic_planner = DynamicPlanner() if HAS_RULE_LEARNER else None
         self._cross_space = CrossSpace() if HAS_CROSS_SPACE else None
+        self._ripple_detours = []
         self._visited_positions: Set[Tuple[int,int]] = set()
         self._stuck_counter = 0
         self._last_progress_frame = 0
@@ -756,6 +757,14 @@ class CrossResonanceV26(Agent):
             except Exception as e:
                 print(f"CROSS_SPACE_ERR: {e}", file=sys.stderr)
 
+        # Ripple detours: high-energy positions from frame diffs
+        if hasattr(self, '_ripple_detours') and self._ripple_detours:
+            for rd in self._ripple_detours[:3]:
+                if rd not in detours:
+                    detours.insert(0, rd)
+            print(f"RIPPLE_PLAN: {len(self._ripple_detours)} ripple detours added", file=sys.stderr)
+            self._ripple_detours = []  # consume
+
         # EXISTING BFS PLANNING (with rule detours now included)
         self._planner = RoutePlanner(self._smap, mv_actions)
         route = self._planner.plan_route(self._ctrl_pos, goals, detours, self._ctrl_offsets, budget)
@@ -788,6 +797,56 @@ class CrossResonanceV26(Agent):
             ctrl_mv = self._get_ctrl_mv(snap)
             self._find_ctrl(snap)
             self._model.record(self._last_aidx, snap.diff is not None and snap.diff.has_changes, ctrl_mv)
+            # CrossSpace ripple: process EVERY frame's diff
+            if HAS_CROSS_SPACE and self._cross_space and self.prev_grid is not None:
+                try:
+                    ripple_impulses = self._cross_space.process_frame(
+                        self._frame,
+                        self.prev_grid,
+                        grid,
+                        self._ctrl_pos or (32, 32),
+                        self._last_aidx,
+                    )
+                    for imp in ripple_impulses[:2]:  # top 2 ripple impulses
+                        if imp.action_type == 'investigate_color' and imp.target:
+                            g_arr = np.array(grid)
+                            for target_color in imp.target:
+                                for r in range(min(60, len(grid))):
+                                    for c in range(len(grid[0])):
+                                        if int(g_arr[r, c]) == target_color:
+                                            if (r, c) not in getattr(self, '_visited_positions', set()):
+                                                if not hasattr(self, '_ripple_detours'):
+                                                    self._ripple_detours = []
+                                                self._ripple_detours.append((r, c))
+                                                break
+                                    if hasattr(self, '_ripple_detours') and self._ripple_detours:
+                                        break
+                            if hasattr(self, '_ripple_detours') and self._ripple_detours:
+                                print(f"RIPPLE_INVESTIGATE: color={imp.target} pos={self._ripple_detours[-1]} energy={imp.priority:.1f}", file=sys.stderr)
+
+                        elif imp.action_type == 'seek_color' and imp.target:
+                            g_arr = np.array(grid)
+                            for target_color in imp.target:
+                                for r in range(min(60, len(grid))):
+                                    for c in range(len(grid[0])):
+                                        if int(g_arr[r, c]) == target_color:
+                                            if not hasattr(self, '_ripple_detours'):
+                                                self._ripple_detours = []
+                                            self._ripple_detours.append((r, c))
+                                            break
+                                    if hasattr(self, '_ripple_detours') and self._ripple_detours:
+                                        break
+                            if hasattr(self, '_ripple_detours') and self._ripple_detours:
+                                print(f"RIPPLE_SEEK: color={imp.target} reason='{imp.reason}'", file=sys.stderr)
+
+                        elif imp.action_type == 'go_to' and imp.target:
+                            if not hasattr(self, '_ripple_detours'):
+                                self._ripple_detours = []
+                            self._ripple_detours.append(imp.target)
+                            print(f"RIPPLE_GOTO: pos={imp.target} reason='{imp.reason}'", file=sys.stderr)
+                except Exception as e:
+                    print(f"RIPPLE_ERR: {e}", file=sys.stderr)
+
             if self._cross_space and ctrl_mv != (0, 0) and self._ctrl_pos:
                 try:
                     color_under = int(np.array(grid)[self._ctrl_pos[0], self._ctrl_pos[1]]) if self._ctrl_pos[0] < 64 and self._ctrl_pos[1] < 64 else 0
@@ -919,6 +978,18 @@ class CrossResonanceV26(Agent):
                             self._click._effective_positions = []
                         self._click._effective_positions.append(cp)
                         print(f"CLICK_EFFECT: pos={cp} colors={colors}", file=sys.stderr)
+                        if self._cross_space:
+                            try:
+                                self._cross_space.record(Experience(
+                                    frame=self._frame,
+                                    position=cp,
+                                    colors_involved=colors if colors else set(),
+                                    event_type='changed',
+                                    action_taken=5,  # ACTION6 index
+                                    details={'click_target': cp, 'cells_changed': 0}
+                                ))
+                            except Exception:
+                                pass
                     except Exception:
                         pass
                 self._last_click = None
