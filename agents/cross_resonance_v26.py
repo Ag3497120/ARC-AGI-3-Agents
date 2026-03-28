@@ -363,7 +363,7 @@ class ClickPlanner:
         # Limit probes — adaptive based on budget
         # Tight baselines need fewer probes, generous ones can probe more
         self._probe_grid = probe_positions
-        self._queue = probe_positions[:20]
+        self._queue = probe_positions[:10]  # reduced from 20 to fit short-baseline games
         self._probe_phase = True
         print(f"CLICK_PROBE: {len(self._queue)} positions to test", file=sys.stderr)
         return self._queue
