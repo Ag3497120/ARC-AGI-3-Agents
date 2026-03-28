@@ -955,9 +955,23 @@ class CrossResonanceV26(Agent):
                         print(f"CLICK_GAME: pattern match found, skipping probe", file=sys.stderr)
                         self._phase = 'plan'
                     else:
-                        print(f"CLICK_GAME: no pattern match, starting click probe", file=sys.stderr)
-                        self._click.plan_click_probe(grid)
-                        self._phase = 'click_probe'
+                        # Use v25 StructureAnalyzer interactive positions first (0 probe cost)
+                        if HAS_V25 and self._v25_smap and self._v25_smap.interactive_objects:
+                            struct_clicks = [(int(r.centroid[0]), int(r.centroid[1])) 
+                                           for r in self._v25_smap.interactive_objects
+                                           if r.cell_count >= 10]
+                            if struct_clicks:
+                                self._click._queue = struct_clicks
+                                print(f"CLICK_GAME: {len(struct_clicks)} positions from StructureAnalyzer, no probe needed", file=sys.stderr)
+                                self._phase = 'plan'
+                            else:
+                                print(f"CLICK_GAME: starting click probe", file=sys.stderr)
+                                self._click.plan_click_probe(grid)
+                                self._phase = 'click_probe'
+                        else:
+                            print(f"CLICK_GAME: starting click probe", file=sys.stderr)
+                            self._click.plan_click_probe(grid)
+                            self._phase = 'click_probe'
                 except Exception:
                     print(f"CLICK_GAME: starting click probe", file=sys.stderr)
                     self._click.plan_click_probe(grid)
