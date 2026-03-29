@@ -48,6 +48,13 @@
     返す 脱出
   }
 
+  // === 1.3 シミュレーション予測がある場合 ===
+  もし シミュレーション行動 >= 0 {
+    もし シミュレーション信頼度 > 60 {
+      返す シミュレーション行動
+    }
+  }
+
   // === 1.5 SLM行動計画がある場合 ===
   もし SLM計画あり == 真 {
     もし SLM方向 >= 0 {
@@ -190,13 +197,13 @@
 // [RULE:クリック行動 END]
 
 // [RULE:公理_1 START]
-// 確定等価式: cycle×scattered×mid $= 行動3の効果
+// 確定等価式: cycle×block×near $= 行動0の効果
 // 観測回数: 3
 
 // [RULE:公理_1 END]
 
 // [RULE:公理_0 START]
-// 確定等価式: swap×block×near $= 行動5の効果
+// 確定等価式: cycle×block×near $= 行動3の効果
 // 観測回数: 3
 
 // [RULE:公理_0 END]
@@ -214,13 +221,13 @@
 // [RULE:公理_5 END]
 
 // [RULE:公理_2 START]
-// 確定等価式: swap×block×mid $= 行動5の効果
+// 確定等価式: cycle×block×mid $= 行動3の効果
 // 観測回数: 3
 
 // [RULE:公理_2 END]
 
 // [RULE:公理_3 START]
-// 確定等価式: multi×scattered×mid $= 行動2の効果
+// 確定等価式: swap×block×near $= 行動0の効果
 // 観測回数: 3
 
 // [RULE:公理_3 END]
@@ -238,7 +245,7 @@
 // [RULE:公理_8 END]
 
 // [RULE:公理_7 START]
-// 確定等価式: swap×block×far $= 行動0の効果
+// 確定等価式: cycle×scattered×near $= 行動5の効果
 // 観測回数: 3
 
 // [RULE:公理_7 END]
@@ -282,9 +289,120 @@
 // [RULE:SLM_block_state_change START]
 // 発見: ブロック状態変化
 // 行動によりブロックの色/状態が変化する
-// 変化パターン: {(9, 8): 36}
+// 変化パターン: {(12, 3): 10, (3, 12): 10, (9, 3): 15, (3, 9): 15}
 // [RULE:SLM_block_state_change END]
 
 // [RULE:ゲーム分析_toggle START]
-// ゲームタイプ：切り替え // 現在の発見はありません。
+// ゲームタイプ：切り替え // 説明：サイコロの色が変化するゲームです。 // デザイン要素： // - 命中色: [0, 3, 4, 5] // - 別の要素：なし
 // [RULE:ゲーム分析_toggle END]
+
+// [RULE:ゲーム分析_pattern_match START]
+// ゲームはパターンマッチです。 // 揚げ色の発見：3、5、9、12 // 5文字目から始まる // 4つの周期が存在します。
+// [RULE:ゲーム分析_pattern_match END]
+
+// [RULE:ゲーム分析_click_pattern_match START]
+// キーボードでマスをクリックして、色の周期的なパターンを見つけよう！ // 色は3回、9回、10回目です。 // プレイヤーが勝利します。
+// [RULE:ゲーム分析_click_pattern_match END]
+
+// [RULE:因果_5 START]
+// 因果等価式: 下 × 領域('mid', 'center') × 色3
+//   $= blocked
+// 観測: 3回 確定: True
+// この方向はブロックされる
+// [RULE:因果_5 END]
+
+// [RULE:因果_4 START]
+// 因果等価式: 右 × 領域('mid', 'center') × 色3
+//   $= large_change
+// 観測: 3回 確定: True
+// [RULE:因果_4 END]
+
+// [RULE:因果_9 START]
+// 因果等価式: 左 × 領域('mid', 'center') × 色3
+//   $= large_change
+// 観測: 3回 確定: True
+// [RULE:因果_9 END]
+
+// [RULE:因果_20 START]
+// 因果等価式: 左 × 領域('bottom', 'left') × 色0
+//   $= large_change
+// 観測: 3回 確定: True
+// [RULE:因果_20 END]
+
+// [RULE:因果_22 START]
+// 因果等価式: 右 × 領域('bottom', 'left') × 色5
+//   $= blocked
+// 観測: 3回 確定: True
+// この方向はブロックされる
+// [RULE:因果_22 END]
+
+// [RULE:因果_6 START]
+// 因果等価式: 右 × 領域('bottom', 'right') × 色3
+//   $= large_change
+// 観測: 3回 確定: True
+// [RULE:因果_6 END]
+
+// [RULE:因果_8 START]
+// 因果等価式: 左 × 領域('bottom', 'center') × 色3
+//   $= large_change
+// 観測: 3回 確定: True
+// [RULE:因果_8 END]
+
+// [RULE:因果_7 START]
+// 因果等価式: 上 × 領域('bottom', 'right') × 色3
+//   $= large_change
+// 観測: 3回 確定: True
+// [RULE:因果_7 END]
+
+// [RULE:因果_39 START]
+// 因果等価式: 下 × 領域('bottom', 'center') × 色9
+//   $= blocked
+// 観測: 3回 確定: True
+// この方向はブロックされる
+// [RULE:因果_39 END]
+
+// [RULE:因果_13 START]
+// 因果等価式: 上 × 領域('mid', 'center') × 色3
+//   $= large_change
+// 観測: 3回 確定: True
+// [RULE:因果_13 END]
+
+// [RULE:因果_45 START]
+// 因果等価式: 右 × 領域('bottom', 'right') × 色3
+//   $= large_change
+// 観測: 3回 確定: True
+// [RULE:因果_45 END]
+
+// [RULE:因果_65 START]
+// 因果等価式: 左 × 領域('mid', 'center') × 色3
+//   $= large_change
+// 観測: 3回 確定: True
+// [RULE:因果_65 END]
+
+// [RULE:因果_18 START]
+// 因果等価式: 上 × 領域('bottom', 'left') × 色0
+//   $= blocked
+// 観測: 3回 確定: True
+// この方向はブロックされる
+// [RULE:因果_18 END]
+
+// [RULE:因果_16 START]
+// 因果等価式: 右 × 領域('bottom', 'left') × 色5
+//   $= blocked
+// 観測: 3回 確定: True
+// この方向はブロックされる
+// [RULE:因果_16 END]
+
+// [RULE:因果_21 START]
+// 因果等価式: 左 × 領域('bottom', 'left') × 色5
+//   $= blocked
+// 観測: 3回 確定: True
+// この方向はブロックされる
+// [RULE:因果_21 END]
+
+// [RULE:因果_49 START]
+// 因果等価式: 右 × 領域('bottom', 'right') × 色9
+//   $= blocked
+// 観測: 3回 確定: True
+// この方向はブロックされる
+// [RULE:因果_49 END]

@@ -63,6 +63,37 @@ class CrossAxiom:
         return min(self.observations / 3.0, 1.0)
 
 
+@dataclass
+class CausalAxiom:
+    """action×context $= effect の因果的等価式"""
+    axiom_id: int
+
+    # 因果の左辺: action × context
+    action_idx: int                    # どの行動
+    context_sig: tuple                 # 行動時の6軸コンテキスト (player_region, color_under, nearby_colors...)
+
+    # 因果の右辺: effect
+    effect_sig: tuple                  # 効果の6軸シグネチャ
+    effect_details: Dict[str, Any] = field(default_factory=dict)
+    # effect_details例:
+    #   {'type': 'wall_open', 'region': (28,32,34,38), 'color_from': 5, 'color_to': 3}
+    #   {'type': 'color_cycle', 'colors': [3,5,7], 'block_pos': (10,40)}
+    #   {'type': 'player_move', 'delta': (0, 5)}
+    #   {'type': 'no_effect'}
+
+    # 確信度
+    observations: int = 1
+    confirmed: bool = False            # 3回で確定
+    contradictions: int = 0            # 矛盾回数（同じ因果で違う効果）
+
+    # jcross形式
+    jcross_equiv: str = ""             # 等価式のjcross表現
+
+    def match(self, action_idx: int, context_sig: tuple) -> bool:
+        """この等価式が適用可能か"""
+        return self.action_idx == action_idx and self.context_sig == context_sig
+
+
 class CrossAxiomEngine:
     """
     フレーム差分 → 6軸CrossEvent → 等価式(CrossAxiom) → jcross動的書き換え
@@ -86,6 +117,10 @@ class CrossAxiomEngine:
         # 例: 'click_color_cycle' → 'クリック $= 色サイクル(+1 mod N)'
         #     'move_asymmetric' → '左右移動 $= 28セル, 上下移動 $= 1セル'
         #     'pattern_match' → '左パターン $= 右パターン → クリア'
+
+        # 因果的等価式 (action × context $= effect)
+        self.causal_axioms: List['CausalAxiom'] = []
+        self._causal_counter = 0
 
     def process_frame(self, frame: int, prev_grid, curr_grid,
                       player_pos: Tuple[int, int], action_idx: int,
@@ -379,4 +414,246 @@ class CrossAxiomEngine:
             'axioms': len(self.axioms),
             'confirmed': sum(1 for a in self.axioms if a.confirmed),
             'discovered_rules': list(self.discovered_rules.keys()),
+            'causal_axioms': len(self.causal_axioms),
+            'causal_confirmed': sum(1 for a in self.causal_axioms if a.confirmed),
         }
+
+    # ========================================
+    # 因果的等価式: action × context $= effect
+    # ========================================
+
+    def process_frame_causal(self, frame, prev_grid, curr_grid,
+                              player_pos, prev_player_pos, action_idx,
+                              corridor_colors=None) -> Optional['CausalAxiom']:
+        """action→diffの因果関係を6軸で捕捉"""
+
+        prev_g = np.array(prev_grid) if not isinstance(prev_grid, np.ndarray) else prev_grid
+        curr_g = np.array(curr_grid) if not isinstance(curr_grid, np.ndarray) else curr_grid
+
+        # === 行動のコンテキストを6軸で記述 ===
+
+        # プレイヤーの位置コンテキスト
+        pr, pc = player_pos if player_pos else (32, 32)
+        player_region = ('top' if pr < 20 else ('mid' if pr < 40 else 'bottom'),
+                         'left' if pc < 21 else ('center' if pc < 43 else 'right'))
+
+        # プレイヤー足元の色
+        color_under = int(prev_g[pr, pc]) if 0 <= pr < 64 and 0 <= pc < 64 else -1
+
+        # プレイヤー周囲の色セット（5セル以内）
+        nearby_colors = set()
+        for dr in range(-5, 6):
+            for dc in range(-5, 6):
+                nr, nc = pr + dr, pc + dc
+                if 0 <= nr < 60 and 0 <= nc < 64:
+                    nearby_colors.add(int(prev_g[nr, nc]))
+        nearby_sig = tuple(sorted(nearby_colors))[:5]  # 上位5色
+
+        # 移動したか
+        moved = prev_player_pos and player_pos and (prev_player_pos != player_pos)
+        move_delta = (player_pos[0] - prev_player_pos[0], player_pos[1] - prev_player_pos[1]) if moved else (0, 0)
+
+        # コンテキストシグネチャ（因果の左辺の条件部分）
+        context_sig = (
+            player_region,     # どの領域にいた時
+            color_under,       # 何色の上にいた時
+            nearby_sig[:3],    # 周囲にどんな色があった時
+        )
+
+        # === 効果を6軸で記述 ===
+
+        diff_mask = prev_g[:60] != curr_g[:60]
+        changed_cells = list(zip(*np.where(diff_mask))) if np.any(diff_mask) else []
+
+        if not changed_cells and not moved:
+            # 何も起きなかった（ブロックされた）
+            effect_sig = ('no_effect', 'blocked', action_idx)
+            effect_details: Dict[str, Any] = {'type': 'blocked', 'action': action_idx, 'position': (pr, pc)}
+
+        elif not changed_cells and moved:
+            # 移動のみ（グリッド変化なし）
+            effect_sig = ('move_only', f'dr={move_delta[0]}', f'dc={move_delta[1]}')
+            effect_details = {'type': 'player_move', 'delta': move_delta}
+
+        else:
+            # グリッドが変化した
+            color_transitions: Dict[Tuple[int, int], int] = defaultdict(int)
+            for r, c in changed_cells:
+                color_transitions[(int(prev_g[r, c]), int(curr_g[r, c]))] += 1
+
+            # 変化の領域
+            rows = [r for r, c in changed_cells]
+            cols = [c for r, c in changed_cells]
+            change_region = (min(rows), min(cols), max(rows), max(cols))
+
+            # 変化の種類を判定
+            n_changed = len(changed_cells)
+
+            # 壁開放: 壁色→通路色の変化
+            wall_opened = False
+            wall_closed = False
+            if corridor_colors:
+                for (old, new), cnt in color_transitions.items():
+                    if old not in corridor_colors and new in corridor_colors:
+                        wall_opened = True
+                    elif old in corridor_colors and new not in corridor_colors:
+                        wall_closed = True
+
+            if wall_opened:
+                change_type = 'wall_open'
+            elif wall_closed:
+                change_type = 'wall_close'
+            elif n_changed < 50:
+                change_type = 'block_change'
+            else:
+                change_type = 'large_change'
+
+            effect_sig = (change_type, f'n={n_changed}', f'region={change_region[:2]}')
+            effect_details = {
+                'type': change_type,
+                'region': change_region,
+                'transitions': dict(color_transitions),
+                'n_changed': n_changed,
+                'player_moved': moved,
+                'move_delta': move_delta,
+            }
+
+        # === 因果等価式の検索/生成 ===
+
+        # 既存の等価式を探す
+        existing = None
+        for ax in self.causal_axioms:
+            if ax.action_idx == action_idx and ax.context_sig == context_sig:
+                # 同じ効果か？
+                if ax.effect_sig == effect_sig:
+                    existing = ax
+                    break
+                else:
+                    # 矛盾（同じ行動×コンテキストで違う効果）
+                    ax.contradictions += 1
+                    existing = None
+                    break
+
+        new_axiom = None
+        if existing:
+            existing.observations += 1
+            if existing.observations >= 3 and not existing.confirmed:
+                existing.confirmed = True
+                existing.jcross_equiv = self._generate_causal_jcross(existing)
+                new_axiom = existing
+        else:
+            # 新しい因果等価式
+            axiom = CausalAxiom(
+                axiom_id=self._causal_counter,
+                action_idx=action_idx,
+                context_sig=context_sig,
+                effect_sig=effect_sig,
+                effect_details=effect_details,
+            )
+            self._causal_counter += 1
+            self.causal_axioms.append(axiom)
+
+        return new_axiom
+
+    def simulate(self, action_idx: int, player_pos, grid,
+                 corridor_colors=None) -> Optional[Dict[str, Any]]:
+        """確定した因果等価式を使って、行動の結果を予測する
+
+        Returns:
+            {'predicted_effect': str, 'confidence': float, 'details': dict}
+            None if no matching axiom
+        """
+        # 現在のコンテキストを計算
+        g = np.array(grid) if not isinstance(grid, np.ndarray) else grid
+        pr, pc = player_pos if player_pos else (32, 32)
+        player_region = ('top' if pr < 20 else ('mid' if pr < 40 else 'bottom'),
+                         'left' if pc < 21 else ('center' if pc < 43 else 'right'))
+        color_under = int(g[pr, pc]) if 0 <= pr < 64 and 0 <= pc < 64 else -1
+        nearby: Set[int] = set()
+        for dr in range(-5, 6):
+            for dc in range(-5, 6):
+                nr, nc = pr + dr, pc + dc
+                if 0 <= nr < 60 and 0 <= nc < 64:
+                    nearby.add(int(g[nr, nc]))
+        nearby_sig = tuple(sorted(nearby))[:5]
+
+        context_sig = (player_region, color_under, nearby_sig[:3])
+
+        # 確定等価式を検索
+        for ax in self.causal_axioms:
+            if ax.confirmed and ax.action_idx == action_idx:
+                # コンテキストが完全一致
+                if ax.context_sig == context_sig:
+                    return {
+                        'predicted_effect': ax.effect_sig[0],
+                        'confidence': min(ax.observations / 5.0, 1.0),
+                        'details': ax.effect_details,
+                        'axiom_id': ax.axiom_id,
+                    }
+                # コンテキストが部分一致（同じ領域、色は違う）
+                if ax.context_sig[0] == context_sig[0]:
+                    return {
+                        'predicted_effect': ax.effect_sig[0],
+                        'confidence': min(ax.observations / 10.0, 0.5),
+                        'details': ax.effect_details,
+                        'axiom_id': ax.axiom_id,
+                    }
+
+        return None
+
+    def get_best_action(self, player_pos, grid, corridor_colors=None,
+                        available_actions=None) -> Tuple[Optional[int], Optional[Dict[str, Any]]]:
+        """全行動をシミュレーションして最良の行動を選ぶ
+
+        Returns:
+            (best_action_idx, prediction) or (None, None)
+        """
+        if not available_actions:
+            available_actions = [0, 1, 2, 3]
+
+        predictions = []
+        for aidx in available_actions:
+            pred = self.simulate(aidx, player_pos, grid, corridor_colors)
+            if pred:
+                predictions.append((aidx, pred))
+
+        if not predictions:
+            return None, None
+
+        # 優先度: wall_open > player_move > block_change > no_effect > blocked
+        priority = {'wall_open': 100, 'player_move': 50, 'block_change': 30,
+                    'large_change': 20, 'wall_close': 10, 'no_effect': -1, 'blocked': -10}
+
+        # no_effect/blockedは除外（避けるべき行動）
+        positive = [(a, p) for a, p in predictions 
+                    if priority.get(p['predicted_effect'], 0) > 0]
+        if not positive:
+            return None, None
+        best = max(positive,
+                   key=lambda x: priority.get(x[1]['predicted_effect'], 0) * x[1]['confidence'])
+        return best
+
+    def _generate_causal_jcross(self, axiom: 'CausalAxiom') -> str:
+        """因果等価式をjcross形式に変換"""
+        action_names = {0: '上', 1: '下', 2: '左', 3: '右', 4: '行動5', 5: 'クリック'}
+        action_name = action_names.get(axiom.action_idx, f'行動{axiom.action_idx}')
+
+        region = axiom.context_sig[0]
+        color = axiom.context_sig[1]
+        effect = axiom.effect_details.get('type', 'unknown')
+
+        lines = []
+        lines.append(f"// 因果等価式: {action_name} × 領域{region} × 色{color}")
+        lines.append(f"//   $= {effect}")
+        lines.append(f"// 観測: {axiom.observations}回 確定: {axiom.confirmed}")
+
+        if effect == 'wall_open':
+            r = axiom.effect_details.get('region', (0, 0, 0, 0))
+            lines.append(f"// 壁開放領域: ({r[0]},{r[1]})-({r[2]},{r[3]})")
+        elif effect == 'player_move':
+            d = axiom.effect_details.get('delta', (0, 0))
+            lines.append(f"// 移動量: ({d[0]},{d[1]})")
+        elif effect == 'blocked':
+            lines.append(f"// この方向はブロックされる")
+
+        return '\n'.join(lines)

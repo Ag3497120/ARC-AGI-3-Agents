@@ -1114,6 +1114,26 @@ class CrossResonanceV26(Agent):
                 except Exception as e:
                     print(f"AXIOM_ERR: {e}", file=sys.stderr)
 
+            # 因果的等価式の処理
+            if self._axiom_engine and self.prev_grid is not None and self._ctrl_pos:
+                try:
+                    causal_axiom = self._axiom_engine.process_frame_causal(
+                        self._frame, self.prev_grid, grid,
+                        self._ctrl_pos, self._prev_ctrl, self._last_aidx,
+                        corridor_colors=self._probe_corridor_colors
+                    )
+                    if causal_axiom and causal_axiom.confirmed:
+                        # 確定した因果等価式をsoul.jcrossに書き込む
+                        rule_name = f"因果_{causal_axiom.axiom_id}"
+                        if self._jcross_runtime:
+                            self._jcross_runtime.rewrite_rule(rule_name, causal_axiom.jcross_equiv)
+                        print(f"CAUSAL_CONFIRMED: id={causal_axiom.axiom_id} "
+                              f"action={causal_axiom.action_idx} "
+                              f"effect={causal_axiom.effect_sig[0]} "
+                              f"obs={causal_axiom.observations}", file=sys.stderr)
+                except Exception as e:
+                    print(f"CAUSAL_ERR: {e}", file=sys.stderr)
+
             # axiom確定時にAgent Loopを再実行（色サイクル発見後など）
             if self._agent_loop and self._agent_loop.is_available:
                 try:
@@ -1671,6 +1691,24 @@ class CrossResonanceV26(Agent):
                     pass
                 a = GameAction.ACTION6; a.set_data({"x": 32, "y": 32}); a.reasoning = "fallback"; return a
         else:
+            # シミュレーションベースの行動選択（因果等価式から未来を予測）
+            sim_action = None
+            sim_prediction = None
+            if self._axiom_engine and self._ctrl_pos:
+                try:
+                    best_action, prediction = self._axiom_engine.get_best_action(
+                        self._ctrl_pos, grid,
+                        corridor_colors=self._probe_corridor_colors,
+                        available_actions=list(range(min(4, len(ALL_ACTIONS))))
+                    )
+                    if best_action is not None and prediction and prediction['confidence'] >= 0.6:
+                        sim_action = best_action
+                        sim_prediction = prediction
+                        print(f"SIMULATE: action={best_action} predicted={prediction['predicted_effect']} "
+                              f"conf={prediction['confidence']:.2f}", file=sys.stderr)
+                except Exception as e:
+                    print(f"SIMULATE_ERR: {e}", file=sys.stderr)
+
             # Phase 2: jcross soul決定を試みる（executeフェーズのみ実際に使用）
             jcross_aidx = -1
             # Pythonフォールバックの計算（ログ用）
@@ -1715,6 +1753,9 @@ class CrossResonanceV26(Agent):
                         "SLM計画あり": bool(self._slm_action_plan),
                         "SLM行動種類": self._slm_action_plan.get("action_type", "") if self._slm_action_plan else "",
                         "SLM方向": self._slm_action_plan.get("direction", -1) if self._slm_action_plan else -1,
+                        # === シミュレーション予測 ===
+                        "シミュレーション行動": sim_action if sim_action is not None else -1,
+                        "シミュレーション信頼度": int(sim_prediction['confidence'] * 100) if sim_prediction else 0,
                     })
                     jcross_aidx = self._jcross_runtime.decide()
                     if jcross_aidx >= 0 and jcross_aidx < len(ALL_ACTIONS):
