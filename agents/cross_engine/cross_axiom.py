@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Set, Optional, Any
 from collections import defaultdict, Counter
 import numpy as np
+import sys
 
 
 @dataclass
@@ -121,6 +122,10 @@ class CrossAxiomEngine:
         # 因果的等価式 (action × context $= effect)
         self.causal_axioms: List['CausalAxiom'] = []
         self._causal_counter = 0
+
+        # 色サイクル検出用
+        self._color_edges: Dict[Tuple[int, int], int] = defaultdict(int)
+        self._detected_cycles: List[List[int]] = []
 
     def process_frame(self, frame: int, prev_grid, curr_grid,
                       player_pos: Tuple[int, int], action_idx: int,
@@ -425,114 +430,128 @@ class CrossAxiomEngine:
     def process_frame_causal(self, frame, prev_grid, curr_grid,
                               player_pos, prev_player_pos, action_idx,
                               corridor_colors=None) -> Optional['CausalAxiom']:
-        """action→diffの因果関係を6軸で捕捉"""
+        """action→diffの因果関係を6軸で捕捉 — v2: 粒度改善版"""
 
         prev_g = np.array(prev_grid) if not isinstance(prev_grid, np.ndarray) else prev_grid
         curr_g = np.array(curr_grid) if not isinstance(curr_grid, np.ndarray) else curr_grid
 
-        # === 行動のコンテキストを6軸で記述 ===
-
-        # プレイヤーの位置コンテキスト
         pr, pc = player_pos if player_pos else (32, 32)
-        player_region = ('top' if pr < 20 else ('mid' if pr < 40 else 'bottom'),
-                         'left' if pc < 21 else ('center' if pc < 43 else 'right'))
+        ppr, ppc = prev_player_pos if prev_player_pos else (pr, pc)
+
+        # === コンテキスト: action方向を見る ===
+
+        # action方向の移動ベクトル（probe結果から推定）
+        move_vectors = {0: (-5, 0), 1: (5, 0), 2: (0, -5), 3: (0, 5)}
+        dv = move_vectors.get(action_idx, (0, 0))
+
+        # action方向の5セル先の色（壁か通路か）
+        front_r = max(0, min(59, pr + dv[0]))
+        front_c = max(0, min(63, pc + dv[1]))
+        color_ahead = int(prev_g[front_r, front_c]) if 0 <= front_r < 60 and 0 <= front_c < 64 else -1
+
+        # action方向が通路か壁か
+        is_corridor_ahead = color_ahead in corridor_colors if corridor_colors else False
 
         # プレイヤー足元の色
         color_under = int(prev_g[pr, pc]) if 0 <= pr < 64 and 0 <= pc < 64 else -1
 
-        # プレイヤー周囲の色セット（5セル以内）
-        nearby_colors = set()
-        for dr in range(-5, 6):
-            for dc in range(-5, 6):
-                nr, nc = pr + dr, pc + dc
-                if 0 <= nr < 60 and 0 <= nc < 64:
-                    nearby_colors.add(int(prev_g[nr, nc]))
-        nearby_sig = tuple(sorted(nearby_colors))[:5]  # 上位5色
-
         # 移動したか
-        moved = prev_player_pos and player_pos and (prev_player_pos != player_pos)
-        move_delta = (player_pos[0] - prev_player_pos[0], player_pos[1] - prev_player_pos[1]) if moved else (0, 0)
+        moved = (pr != ppr or pc != ppc)
+        move_delta = (pr - ppr, pc - ppc)
 
-        # コンテキストシグネチャ（因果の左辺の条件部分）
+        # コンテキスト（v2: action方向ベース）
         context_sig = (
-            player_region,     # どの領域にいた時
-            color_under,       # 何色の上にいた時
-            nearby_sig[:3],    # 周囲にどんな色があった時
+            action_idx,                                          # どの行動
+            'corridor' if is_corridor_ahead else 'wall',        # 前方が通路か壁か
+            color_ahead,                                         # 前方の色
+            color_under,                                         # 足元の色
         )
 
-        # === 効果を6軸で記述 ===
+        # === 効果: 色遷移パターンで分類 ===
 
         diff_mask = prev_g[:60] != curr_g[:60]
         changed_cells = list(zip(*np.where(diff_mask))) if np.any(diff_mask) else []
 
         if not changed_cells and not moved:
-            # 何も起きなかった（ブロックされた）
-            effect_sig = ('no_effect', 'blocked', action_idx)
-            effect_details: Dict[str, Any] = {'type': 'blocked', 'action': action_idx, 'position': (pr, pc)}
+            effect_type = 'blocked'
+            effect_sig = ('blocked', color_ahead)  # 何色でブロックされたか
+            effect_details: Dict[str, Any] = {'type': 'blocked', 'blocking_color': color_ahead}
 
         elif not changed_cells and moved:
-            # 移動のみ（グリッド変化なし）
-            effect_sig = ('move_only', f'dr={move_delta[0]}', f'dc={move_delta[1]}')
-            effect_details = {'type': 'player_move', 'delta': move_delta}
+            effect_type = 'moved'
+            effect_sig = ('moved', move_delta[0], move_delta[1])
+            effect_details = {'type': 'moved', 'delta': move_delta}
 
         else:
-            # グリッドが変化した
-            color_transitions: Dict[Tuple[int, int], int] = defaultdict(int)
+            # 色遷移を分析
+            transitions: Dict[Tuple[int, int], int] = defaultdict(int)
             for r, c in changed_cells:
-                color_transitions[(int(prev_g[r, c]), int(curr_g[r, c]))] += 1
+                transitions[(int(prev_g[r, c]), int(curr_g[r, c]))] += 1
 
-            # 変化の領域
-            rows = [r for r, c in changed_cells]
-            cols = [c for r, c in changed_cells]
-            change_region = (min(rows), min(cols), max(rows), max(cols))
-
-            # 変化の種類を判定
             n_changed = len(changed_cells)
 
-            # 壁開放: 壁色→通路色の変化
+            # 色サイクル検出: 同一色→別色の一括変化
+            unique_transitions = set(transitions.keys())
+            is_single_swap = len(unique_transitions) == 1
+            is_color_cycle = len(unique_transitions) >= 2 and all(
+                cnt >= 4 for cnt in transitions.values()  # 各遷移が4セル以上
+            )
+
+            # 壁開放/閉鎖の検出
             wall_opened = False
             wall_closed = False
             if corridor_colors:
-                for (old, new), cnt in color_transitions.items():
+                for (old, new), cnt in transitions.items():
                     if old not in corridor_colors and new in corridor_colors:
                         wall_opened = True
                     elif old in corridor_colors and new not in corridor_colors:
                         wall_closed = True
 
+            # 効果の分類
             if wall_opened:
-                change_type = 'wall_open'
-            elif wall_closed:
-                change_type = 'wall_close'
-            elif n_changed < 50:
-                change_type = 'block_change'
-            else:
-                change_type = 'large_change'
+                # 壁開放: 主要な遷移の色を記録
+                main_trans = max(transitions.items(), key=lambda x: x[1])
+                effect_type = 'wall_open'
+                effect_sig = ('wall_open', main_trans[0][0], main_trans[0][1])
+                effect_details = {'type': 'wall_open', 'transitions': dict(transitions), 'n': n_changed}
 
-            effect_sig = (change_type, f'n={n_changed}', f'region={change_region[:2]}')
-            effect_details = {
-                'type': change_type,
-                'region': change_region,
-                'transitions': dict(color_transitions),
-                'n_changed': n_changed,
-                'player_moved': moved,
-                'move_delta': move_delta,
-            }
+            elif wall_closed:
+                main_trans = max(transitions.items(), key=lambda x: x[1])
+                effect_type = 'wall_close'
+                effect_sig = ('wall_close', main_trans[0][0], main_trans[0][1])
+                effect_details = {'type': 'wall_close', 'transitions': dict(transitions), 'n': n_changed}
+
+            elif is_color_cycle or is_single_swap:
+                # 色変化: 遷移パターンを記録
+                sorted_trans = tuple(sorted(unique_transitions))
+                effect_type = 'color_change'
+                effect_sig = ('color_change', sorted_trans)
+                effect_details = {
+                    'type': 'color_change',
+                    'transitions': dict(transitions),
+                    'is_cycle': is_color_cycle,
+                    'n': n_changed,
+                }
+                # 色サイクルの蓄積
+                self._accumulate_color_cycle(transitions)
+
+            else:
+                # その他の変化: 主要遷移で分類
+                main_trans = max(transitions.items(), key=lambda x: x[1])
+                effect_type = 'grid_change'
+                effect_sig = ('grid_change', main_trans[0][0], main_trans[0][1])
+                effect_details = {'type': 'grid_change', 'transitions': dict(transitions), 'n': n_changed}
 
         # === 因果等価式の検索/生成 ===
 
-        # 既存の等価式を探す
         existing = None
         for ax in self.causal_axioms:
-            if ax.action_idx == action_idx and ax.context_sig == context_sig:
-                # 同じ効果か？
+            if ax.context_sig == context_sig:
                 if ax.effect_sig == effect_sig:
                     existing = ax
                     break
                 else:
-                    # 矛盾（同じ行動×コンテキストで違う効果）
                     ax.contradictions += 1
-                    existing = None
-                    break
 
         new_axiom = None
         if existing:
@@ -542,7 +561,6 @@ class CrossAxiomEngine:
                 existing.jcross_equiv = self._generate_causal_jcross(existing)
                 new_axiom = existing
         else:
-            # 新しい因果等価式
             axiom = CausalAxiom(
                 axiom_id=self._causal_counter,
                 action_idx=action_idx,
@@ -555,59 +573,95 @@ class CrossAxiomEngine:
 
         return new_axiom
 
+    def _accumulate_color_cycle(self, transitions: Dict[Tuple[int, int], int]) -> None:
+        """色遷移からサイクルを自動構築
+        (3→5), (5→7) を蓄積 → [3,5,7] のサイクルを検出
+        """
+        for (old, new), cnt in transitions.items():
+            if cnt >= 4:  # 4セル以上の一括変化のみ
+                self._color_edges[(old, new)] += 1
+
+        # サイクル検出: A→B→C→A を探す
+        colors_seen: Set[int] = set()
+        for (a, b) in self._color_edges:
+            colors_seen.add(a)
+            colors_seen.add(b)
+
+        for start in colors_seen:
+            cycle = [start]
+            current = start
+            visited = {start}
+            while True:
+                # currentから出る辺を探す
+                next_color = None
+                for (a, b), cnt in self._color_edges.items():
+                    if a == current and b not in visited and cnt >= 2:
+                        next_color = b
+                        break
+                if next_color is None:
+                    # currentからstartへの辺があればサイクル完成
+                    if (current, start) in self._color_edges and len(cycle) >= 2:
+                        if sorted(cycle) not in [sorted(c) for c in self._detected_cycles]:
+                            self._detected_cycles.append(cycle)
+                            print(f"COLOR_CYCLE_DETECTED: {cycle}", file=sys.stderr)
+                    break
+                cycle.append(next_color)
+                visited.add(next_color)
+                current = next_color
+                if len(cycle) > 10:
+                    break
+
+    def get_detected_cycles(self) -> List[List[int]]:
+        """検出された色サイクルを返す"""
+        return self._detected_cycles
+
     def simulate(self, action_idx: int, player_pos, grid,
                  corridor_colors=None) -> Optional[Dict[str, Any]]:
-        """確定した因果等価式を使って、行動の結果を予測する
-
-        Returns:
-            {'predicted_effect': str, 'confidence': float, 'details': dict}
-            None if no matching axiom
-        """
-        # 現在のコンテキストを計算
+        """確定等価式から行動の結果を予測 — v2"""
         g = np.array(grid) if not isinstance(grid, np.ndarray) else grid
         pr, pc = player_pos if player_pos else (32, 32)
-        player_region = ('top' if pr < 20 else ('mid' if pr < 40 else 'bottom'),
-                         'left' if pc < 21 else ('center' if pc < 43 else 'right'))
+
+        # action方向
+        move_vectors = {0: (-5, 0), 1: (5, 0), 2: (0, -5), 3: (0, 5)}
+        dv = move_vectors.get(action_idx, (0, 0))
+        front_r = max(0, min(59, pr + dv[0]))
+        front_c = max(0, min(63, pc + dv[1]))
+        color_ahead = int(g[front_r, front_c]) if 0 <= front_r < 60 and 0 <= front_c < 64 else -1
+        is_corridor = color_ahead in corridor_colors if corridor_colors else False
         color_under = int(g[pr, pc]) if 0 <= pr < 64 and 0 <= pc < 64 else -1
-        nearby: Set[int] = set()
-        for dr in range(-5, 6):
-            for dc in range(-5, 6):
-                nr, nc = pr + dr, pc + dc
-                if 0 <= nr < 60 and 0 <= nc < 64:
-                    nearby.add(int(g[nr, nc]))
-        nearby_sig = tuple(sorted(nearby))[:5]
 
-        context_sig = (player_region, color_under, nearby_sig[:3])
+        context_sig = (
+            action_idx,
+            'corridor' if is_corridor else 'wall',
+            color_ahead,
+            color_under,
+        )
 
-        # 確定等価式を検索
+        # 完全一致を探す
         for ax in self.causal_axioms:
-            if ax.confirmed and ax.action_idx == action_idx:
-                # コンテキストが完全一致
-                if ax.context_sig == context_sig:
-                    return {
-                        'predicted_effect': ax.effect_sig[0],
-                        'confidence': min(ax.observations / 5.0, 1.0),
-                        'details': ax.effect_details,
-                        'axiom_id': ax.axiom_id,
-                    }
-                # コンテキストが部分一致（同じ領域、色は違う）
-                if ax.context_sig[0] == context_sig[0]:
-                    return {
-                        'predicted_effect': ax.effect_sig[0],
-                        'confidence': min(ax.observations / 10.0, 0.5),
-                        'details': ax.effect_details,
-                        'axiom_id': ax.axiom_id,
-                    }
+            if ax.confirmed and ax.context_sig == context_sig:
+                return {
+                    'predicted_effect': ax.effect_sig[0],
+                    'confidence': min(ax.observations / 5.0, 1.0),
+                    'details': ax.effect_details,
+                    'axiom_id': ax.axiom_id,
+                }
+
+        # 部分一致: 同じaction + 同じ前方状態（色は違っても壁/通路が同じ）
+        for ax in self.causal_axioms:
+            if ax.confirmed and ax.context_sig[0] == action_idx and ax.context_sig[1] == context_sig[1]:
+                return {
+                    'predicted_effect': ax.effect_sig[0],
+                    'confidence': min(ax.observations / 10.0, 0.5),
+                    'details': ax.effect_details,
+                    'axiom_id': ax.axiom_id,
+                }
 
         return None
 
     def get_best_action(self, player_pos, grid, corridor_colors=None,
                         available_actions=None) -> Tuple[Optional[int], Optional[Dict[str, Any]]]:
-        """全行動をシミュレーションして最良の行動を選ぶ
-
-        Returns:
-            (best_action_idx, prediction) or (None, None)
-        """
+        """全行動シミュレーション → blocked/no_effectを避ける最良行動"""
         if not available_actions:
             available_actions = [0, 1, 2, 3]
 
@@ -620,17 +674,16 @@ class CrossAxiomEngine:
         if not predictions:
             return None, None
 
-        # 優先度: wall_open > player_move > block_change > no_effect > blocked
-        priority = {'wall_open': 100, 'player_move': 50, 'block_change': 30,
-                    'large_change': 20, 'wall_close': 10, 'no_effect': -1, 'blocked': -10}
-
-        # no_effect/blockedは除外（避けるべき行動）
-        positive = [(a, p) for a, p in predictions 
-                    if priority.get(p['predicted_effect'], 0) > 0]
-        if not positive:
+        # blocked/no_effectは除外
+        good = [(a, p) for a, p in predictions
+                if p['predicted_effect'] not in ('blocked', 'no_effect')]
+        if not good:
             return None, None
-        best = max(positive,
-                   key=lambda x: priority.get(x[1]['predicted_effect'], 0) * x[1]['confidence'])
+
+        priority = {'wall_open': 100, 'color_change': 80, 'moved': 50,
+                    'grid_change': 30, 'wall_close': 10}
+
+        best = max(good, key=lambda x: priority.get(x[1]['predicted_effect'], 0) * x[1]['confidence'])
         return best
 
     def _generate_causal_jcross(self, axiom: 'CausalAxiom') -> str:
