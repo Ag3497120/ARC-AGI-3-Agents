@@ -1,233 +1,233 @@
 """
-slm_bridge.py — SLM(2B)をcross_axiomに接続する橋
-axiomが発見した等価式を具体的行動に変換する
+slm_bridge.py — SLMをjcrossコード生成器として使う
 
-kofdaiの方針: AIは使わない（LLMなし）が原則だが、
-2Bレベルの小さなモデルは「道具」として許容。
-計算の延長。推論の延長。
+kofdai型:
+- SLMは問題を解かない。jcrossを書く。
+- テンプレート（Cross構造のスケルトン）を提供し、SLMが穴埋め
+- 生成されたjcrossはsoul.jcrossに書き込まれてCross構造が成長
 """
 
 import json
 import urllib.request
-import urllib.error
 from typing import Optional, Dict, List, Any
 
 
 class SLMBridge:
-    """
-    axiomの発見 → SLM → 具体的行動計画
-
-    呼ぶタイミング:
-    - axiomが確定した時（数回/ゲーム）
-    - 新しいゲームルールが発見された時
-    - NOT 毎フレーム（遅すぎる）
-    """
+    """SLMをjcrossコード生成器として使う"""
 
     OLLAMA_URL = "http://localhost:11434/api/generate"
     MODEL = "qwen2.5:1.5b"
 
     def __init__(self):
-        self._available = self._check_available()
-        self._cache: Dict[str, str] = {}  # プロンプトハッシュ→回答キャッシュ
+        self._available = self._check()
+        self._cache = {}
 
-    def _check_available(self) -> bool:
-        """ollamaが起動しているか確認"""
+    def _check(self):
         try:
-            req = urllib.request.Request(
-                "http://localhost:11434/api/tags",
-                method="GET"
-            )
-            with urllib.request.urlopen(req, timeout=2) as resp:
-                return resp.status == 200
+            req = urllib.request.Request("http://localhost:11434/api/tags", method="GET")
+            with urllib.request.urlopen(req, timeout=2) as r:
+                return r.status == 200
         except Exception:
             return False
 
     @property
-    def is_available(self) -> bool:
+    def is_available(self):
         return self._available
 
-    def _call(self, prompt: str, max_tokens: int = 100) -> Optional[str]:
-        """ollamaにプロンプトを送って回答を得る"""
+    def _call(self, prompt, max_tokens=150):
         if not self._available:
             return None
-
-        # キャッシュ確認
-        cache_key = prompt[:200]
-        if cache_key in self._cache:
-            return self._cache[cache_key]
-
+        key = prompt[:300]
+        if key in self._cache:
+            return self._cache[key]
         try:
             data = json.dumps({
                 "model": self.MODEL,
                 "prompt": prompt,
                 "stream": False,
-                "options": {
-                    "num_predict": max_tokens,
-                    "temperature": 0.1,  # 決定論的に近く
-                }
-            }).encode('utf-8')
-
+                "options": {"num_predict": max_tokens, "temperature": 0.1}
+            }).encode()
             req = urllib.request.Request(
-                self.OLLAMA_URL,
-                data=data,
-                headers={"Content-Type": "application/json"},
-                method="POST"
+                self.OLLAMA_URL, data=data,
+                headers={"Content-Type": "application/json"}, method="POST"
             )
-
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                result = json.loads(resp.read().decode('utf-8'))
-                answer = result.get("response", "").strip()
-                self._cache[cache_key] = answer
-                return answer
+            with urllib.request.urlopen(req, timeout=8) as r:
+                ans = json.loads(r.read()).get("response", "").strip()
+                self._cache[key] = ans
+                return ans
         except Exception:
             return None
 
-    def translate_axiom_to_action(self, axiom_type: str, axiom_details: Dict,
-                                   grid_context: str) -> Optional[Dict]:
-        """
-        axiomの等価式を具体的行動計画に変換
-
-        Returns:
-            {"action_type": "click_sequence", "targets": [(r,c), ...], "clicks": [3, 1, 2]}
-            {"action_type": "move_to", "target": (r, c), "direction": 0}
-            None if conversion failed
-        """
+    def generate_jcross_rule(self, axiom_type, context):
+        """axiomの種類に応じてjcrossルールを生成する"""
 
         if axiom_type == "click_color_cycle":
-            return self._solve_color_cycle(axiom_details, grid_context)
+            return self._gen_color_cycle_rule(context)
         elif axiom_type == "wall_toggle":
-            return self._solve_wall_toggle(axiom_details, grid_context)
+            return self._gen_wall_toggle_rule(context)
         elif axiom_type == "block_state_change":
-            return self._solve_block_state(axiom_details, grid_context)
-        elif axiom_type == "remote_effect":
-            return self._solve_remote_effect(axiom_details, grid_context)
+            return self._gen_block_state_rule(context)
+        elif axiom_type == "move_asymmetric":
+            return self._gen_asymmetric_move_rule(context)
 
-        return None
+        return self._gen_generic_rule(axiom_type, context)
 
-    def _solve_color_cycle(self, details: Dict, grid_context: str) -> Optional[Dict]:
-        """色サイクルパズルを解く"""
-        cycle_colors = details.get("cycle_colors", [])
-        if not cycle_colors:
+    def _gen_color_cycle_rule(self, ctx):
+        """色サイクルルールのjcross生成"""
+        cycle = ctx.get("cycle_colors", [])
+        blocks = ctx.get("block_positions", [])
+        left_colors = ctx.get("left_colors", [])
+        right_colors = ctx.get("right_colors", [])
+
+        if not cycle:
             return None
 
-        cycle_len = len(cycle_colors)
+        cycle_len = len(cycle)
 
-        # SLMに解かせるプロンプト（短く直接的に）
-        prompt = f"""Color cycle: {' → '.join(str(c) for c in cycle_colors)} → {cycle_colors[0]} (length {cycle_len})
-{grid_context}
-List clicks needed per block. ONLY output lines like: row,col:clicks
-No explanation."""
+        # 計算部分はPythonで確実に作る
+        click_plan_lines = []
+        for i, (lc, rc) in enumerate(zip(left_colors, right_colors)):
+            if lc != rc:
+                if lc in cycle and rc in cycle:
+                    target_idx = cycle.index(lc)
+                    current_idx = cycle.index(rc)
+                    clicks = (target_idx - current_idx + cycle_len) % cycle_len
+                    if clicks > 0 and i < len(blocks):
+                        click_plan_lines.append(
+                            f"// ブロック{i}: 現在色={rc} → 目標色={lc} → {clicks}回クリック"
+                        )
+                        click_plan_lines.append(
+                            f"クリック計画 に 追加({{\"位置\": {list(blocks[i])}, \"回数\": {clicks}}})"
+                        )
 
-        response = self._call(prompt, max_tokens=200)
-        if not response:
+        if not click_plan_lines:
             return None
 
-        # パース: "10,40:2\n20,40:1"
-        click_plan = []
-        for line in response.strip().split('\n'):
-            line = line.strip()
-            if ':' in line:
-                try:
-                    pos_str, clicks_str = line.split(':')
-                    parts = pos_str.strip().split(',')
-                    r, c = int(parts[0].strip()), int(parts[1].strip())
-                    clicks = int(clicks_str.strip())
-                    if 0 <= r < 64 and 0 <= c < 64 and 0 < clicks < cycle_len:
-                        click_plan.append({"pos": (r, c), "clicks": clicks})
-                except (ValueError, IndexError):
-                    continue
+        # SLMに拡張コードを生成させる
+        prompt = f"""You are writing jcross code (Japanese syntax).
+Color cycle: {cycle} (length={cycle_len})
+Write a jcross function that executes a click plan.
 
-        if click_plan:
-            return {
-                "action_type": "click_sequence",
-                "plan": click_plan,
-                "cycle_colors": cycle_colors,
-                "cycle_len": cycle_len,
-            }
+Use ONLY this syntax:
+- 関数 name(params) {{ }}
+- もし condition {{ }}
+- 返す value
+- 変数 = 値
 
-        return None
+Write a function 色サイクル実行() that returns the next click position from クリック計画.
+Keep it under 10 lines. No English."""
 
-    def _solve_wall_toggle(self, details: Dict, grid_context: str) -> Optional[Dict]:
-        """壁開閉パズルの行動提案"""
-        prompt = f"""Wall puzzle. Touching areas toggles walls open/closed.
-{grid_context}
-Move direction to reach toggle? Answer ONE word: up, down, left, or right"""
+        slm_code = self._call(prompt, max_tokens=200)
 
-        response = self._call(prompt, max_tokens=20)
-        if not response:
-            return None
+        # SLMの出力をサニタイズ
+        func_code = self._sanitize_jcross(slm_code) if slm_code else ""
 
-        direction_map = {"up": 0, "down": 1, "left": 2, "right": 3}
-        for word, idx in direction_map.items():
-            if word in response.lower():
-                return {"action_type": "move_to", "direction": idx}
+        # テンプレート + 計算結果 + SLM拡張を合成
+        rule = f"""// 発見: 色サイクル $= クリックで色が巡回
+// サイクル: {cycle} (長さ={cycle_len})
+クリック計画 = []
+{chr(10).join(click_plan_lines)}
 
-        return None
+{func_code if func_code else "// SLM拡張なし"}"""
 
-    def _solve_block_state(self, details: Dict, grid_context: str) -> Optional[Dict]:
-        """ブロック状態変化パズル"""
-        # 汎用的な状態変化 — SLMに判断を委ねる
-        prompt = f"""Block puzzle. Blocks change state when interacted with.
-{grid_context}
-Next action? Answer: click row,col OR move up/down/left/right. No explanation."""
+        return rule
 
-        response = self._call(prompt, max_tokens=30)
-        if not response:
-            return None
+    def _gen_wall_toggle_rule(self, ctx):
+        """壁開閉ルールのjcross生成"""
+        trigger_pos = ctx.get("trigger_position", [])
+        effect_region = ctx.get("effect_region", [])
 
-        resp_lower = response.lower()
-        if "click" in resp_lower:
-            try:
-                # "click 10,40" or "click at 10,40"
-                parts = resp_lower.replace("click at", "click").replace("click", "").strip().split(',')
-                r = int(parts[0].strip())
-                c = int(parts[1].strip())
-                return {"action_type": "click_at", "pos": (r, c)}
-            except (ValueError, IndexError):
-                pass
+        prompt = f"""Write a jcross function 壁開閉判定() in Japanese syntax.
+It should return the direction (0=up,1=down,2=left,3=right) toward a trigger at position {trigger_pos}.
+Player position is 自分の位置 (a list [row,col]).
+Use もし/返す only. Under 8 lines. No English."""
 
-        if "move" in resp_lower:
-            direction_map = {"up": 0, "down": 1, "left": 2, "right": 3}
-            for word, idx in direction_map.items():
-                if word in resp_lower:
-                    return {"action_type": "move_to", "direction": idx}
+        slm_code = self._call(prompt, max_tokens=150)
+        func_code = self._sanitize_jcross(slm_code) if slm_code else ""
 
-        return None
+        return f"""// 発見: 壁開閉 $= 特定位置への接触
+// トリガー位置: {trigger_pos}
+// 効果領域: {effect_region}
+{func_code if func_code else "// SLM拡張なし"}"""
 
-    def _solve_remote_effect(self, details: Dict, grid_context: str) -> Optional[Dict]:
-        """遠隔効果の解析"""
-        return None  # 今は未実装
+    def _gen_block_state_rule(self, ctx):
+        """ブロック状態変化ルールのjcross生成"""
+        return f"""// 発見: ブロック状態変化
+// 行動によりブロックの色/状態が変化する
+// 変化パターン: {ctx.get('transitions', {})}"""
 
-    def build_grid_context(self, grid, player_pos,
-                           discovered_rules: Dict[str, str],
-                           left_pattern=None, right_pattern=None) -> str:
-        """グリッドのコンテキスト文字列を構築"""
-        import numpy as np
-        g = np.array(grid) if not isinstance(grid, np.ndarray) else grid
+    def _gen_asymmetric_move_rule(self, ctx):
+        """非対称移動ルールのjcross生成"""
+        moves = ctx.get("move_vectors", {})
+        return f"""// 発見: 非対称移動
+// 移動ベクトル: {moves}
+// 上下と左右で移動量が異なる"""
+
+    def _gen_generic_rule(self, axiom_type, ctx):
+        """汎用ルール生成 — SLMに自由に書かせる"""
+        prompt = f"""Write a short jcross comment describing this game rule:
+Type: {axiom_type}
+Context: {json.dumps(ctx, default=str)[:200]}
+Use Japanese. Format: // comment lines only. Under 5 lines."""
+
+        slm_code = self._call(prompt, max_tokens=100)
+        if slm_code:
+            return self._sanitize_jcross(slm_code)
+        return f"// 発見: {axiom_type}"
+
+    def _sanitize_jcross(self, code):
+        """SLM出力からjcross互換コードだけ抽出"""
+        if not code:
+            return ""
 
         lines = []
-        lines.append(f"Grid: {g.shape[0]}x{g.shape[1]}")
-        lines.append(f"Player position: row={player_pos[0]}, col={player_pos[1]}")
-
-        # 色の分布
-        from collections import Counter
-        color_counts = Counter(int(v) for v in g[:60].flatten())
-        top_colors = color_counts.most_common(5)
-        lines.append(f"Top colors: {top_colors}")
-
-        # 発見されたルール
-        if discovered_rules:
-            lines.append("Discovered rules:")
-            for rule_type, rule_desc in discovered_rules.items():
-                # jcrossのコメント行だけ抽出
-                for line in rule_desc.split('\n'):
-                    if line.strip().startswith('//'):
-                        lines.append(f"  {line.strip()}")
-
-        # パターン比較（左右のブロック色）
-        if left_pattern and right_pattern:
-            lines.append(f"Left pattern: {left_pattern}")
-            lines.append(f"Right pattern: {right_pattern}")
-            lines.append("Goal: Make right pattern match left pattern")
+        in_code = False
+        for line in code.split('\n'):
+            stripped = line.strip()
+            # コードブロック記号を除去
+            if stripped.startswith('```'):
+                in_code = not in_code
+                continue
+            # 空行やコメントは通す
+            if not stripped:
+                continue
+            # 日本語キーワードまたはコメントを含む行だけ採用
+            if any(kw in stripped for kw in ['関数', 'もし', '返す', '各', '表示', '//', '=', '{', '}']):
+                lines.append(stripped)
+            elif stripped.startswith('//'):
+                lines.append(stripped)
 
         return '\n'.join(lines)
+
+    def generate_click_plan_from_patterns(self, grid, cycle_colors,
+                                          left_blocks, right_blocks):
+        """
+        左右のブロックパターンを比較してクリック計画を生成
+
+        SLMを使わず純粋な計算。SLMはjcrossルールの拡張のみ。
+
+        Args:
+            grid: 64x64 grid
+            cycle_colors: [3, 5, 7] 色サイクル
+            left_blocks: [(r,c,color), ...] 左側ブロック
+            right_blocks: [(r,c,color), ...] 右側ブロック
+
+        Returns:
+            [{"pos": (r,c), "clicks": n}, ...]
+        """
+        if not cycle_colors:
+            return []
+
+        cycle_len = len(cycle_colors)
+        plan = []
+
+        for (lr, lc, l_color), (rr, rc, r_color) in zip(left_blocks, right_blocks):
+            if l_color != r_color:
+                if l_color in cycle_colors and r_color in cycle_colors:
+                    target_idx = cycle_colors.index(l_color)
+                    current_idx = cycle_colors.index(r_color)
+                    clicks = (target_idx - current_idx + cycle_len) % cycle_len
+                    if clicks > 0:
+                        plan.append({"pos": (rr, rc), "clicks": clicks})
+
+        return plan

@@ -1054,23 +1054,50 @@ class CrossResonanceV26(Agent):
                             self._jcross_runtime.rewrite_rule(rule_name, ax.jcross_rule)
                             print(f"AXIOM_CONFIRMED: id={ax.axiom_id} sig={ax.trigger_sig} obs={ax.observations}", file=sys.stderr)
 
-                            # SLMで行動計画に変換（axiom確定時のみ呼ぶ）
+                            # SLMでjcrossルールを生成してsoul.jcrossに書き込む
                             if self._slm and self._slm.is_available and self._axiom_engine:
                                 try:
-                                    grid_ctx = self._slm.build_grid_context(
-                                        grid, self._ctrl_pos or (32, 32),
-                                        self._axiom_engine.discovered_rules
-                                    )
-                                    for rule_type in list(self._axiom_engine.discovered_rules.keys()):
-                                        plan = self._slm.translate_axiom_to_action(
-                                            rule_type,
-                                            {'cycle_colors': ax.trigger_sig},  # details from axiom
-                                            grid_ctx
-                                        )
-                                        if plan:
-                                            self._slm_action_plan = plan
-                                            print(f"SLM_PLAN: {plan['action_type']} {plan}", file=sys.stderr)
-                                            break
+                                    for rule_type, rule_desc in self._axiom_engine.discovered_rules.items():
+                                        # axiomの詳細情報を収集
+                                        axiom_ctx = {
+                                            'cycle_colors': [],
+                                            'block_positions': [],
+                                            'left_colors': [],
+                                            'right_colors': [],
+                                            'transitions': {},
+                                            'trigger_position': list(self._ctrl_pos) if self._ctrl_pos else [],
+                                        }
+
+                                        # cross_axiomのイベントから色サイクル情報を抽出
+                                        for event in self._axiom_engine.events[-10:]:
+                                            if event.color_delta.get('cycle_colors'):
+                                                axiom_ctx['cycle_colors'] = event.color_delta['cycle_colors']
+                                            if event.color_delta.get('transitions'):
+                                                axiom_ctx['transitions'] = event.color_delta['transitions']
+
+                                        # SLMにjcrossルールを生成させる
+                                        jcross_rule = self._slm.generate_jcross_rule(rule_type, axiom_ctx)
+                                        if jcross_rule:
+                                            slm_rule_name = f"SLM_{rule_type}"
+                                            self._jcross_runtime.rewrite_rule(slm_rule_name, jcross_rule)
+                                            print(f"SLM_JCROSS: type={rule_type} rule_len={len(jcross_rule)}", file=sys.stderr)
+
+                                            # 色サイクルの場合: 純粋計算でクリック計画も生成
+                                            if rule_type == 'click_color_cycle' and axiom_ctx['cycle_colors']:
+                                                # ClickPlannerのブロック情報を使う
+                                                if hasattr(self._click, '_clickable_positions'):
+                                                    click_plan = self._slm.generate_click_plan_from_patterns(
+                                                        grid,
+                                                        axiom_ctx['cycle_colors'],
+                                                        [],  # left_blocks — 後で実装
+                                                        [],  # right_blocks — 後で実装
+                                                    )
+                                                    if click_plan:
+                                                        self._slm_action_plan = {
+                                                            "action_type": "click_sequence",
+                                                            "plan": click_plan,
+                                                        }
+                                                        print(f"SLM_CLICK_PLAN: {len(click_plan)} clicks", file=sys.stderr)
                                 except Exception as _slm_e:
                                     print(f"SLM_ERR: {_slm_e}", file=sys.stderr)
                         elif ax.jcross_rule:
