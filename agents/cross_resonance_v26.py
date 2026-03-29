@@ -63,6 +63,12 @@ try:
 except ImportError:
     HAS_SLM = False
 
+try:
+    from .cross_engine.cross_agent_loop import CrossAgentLoop
+    HAS_AGENT_LOOP = True
+except ImportError:
+    HAS_AGENT_LOOP = False
+
 
 ALL_ACTIONS = [
     GameAction.ACTION1, GameAction.ACTION2,
@@ -629,6 +635,9 @@ class CrossResonanceV26(Agent):
         self._axiom_engine = CrossAxiomEngine() if HAS_AXIOM else None
         self._slm = SLMBridge() if HAS_SLM else None
         self._slm_action_plan = None  # SLMが生成した行動計画
+        self._agent_loop = CrossAgentLoop() if HAS_AGENT_LOOP else None
+        self._agent_loop_done = False  # ゲーム開始時に1回だけ実行
+        self._agent_loop_result = None
 
         # jcross soul runtime (Phase 2)
         if HAS_JCROSS:
@@ -1105,6 +1114,30 @@ class CrossResonanceV26(Agent):
                 except Exception as e:
                     print(f"AXIOM_ERR: {e}", file=sys.stderr)
 
+            # axiom確定時にAgent Loopを再実行（色サイクル発見後など）
+            if self._agent_loop and self._agent_loop.is_available:
+                try:
+                    _new_axioms_count = len(self._axiom_engine.events) if self._axiom_engine else 0
+                    if _new_axioms_count > 0:
+                        loop_result = self._agent_loop.run(
+                            grid, self._ctrl_pos or (32, 32), self.prev_grid,
+                            self._axiom_engine, self._jcross_runtime,
+                            self._frame, self._model.is_click_game
+                        )
+                        if loop_result:
+                            self._agent_loop_result = loop_result
+                            for rule_info in loop_result.get('jcross_rules', []):
+                                if self._jcross_runtime:
+                                    self._jcross_runtime.rewrite_rule(rule_info['name'], rule_info['code'])
+                            if loop_result.get('click_plan') and not self._slm_action_plan:
+                                self._slm_action_plan = {
+                                    'action_type': 'click_sequence',
+                                    'plan': loop_result['click_plan'],
+                                }
+                                print(f"AGENT_LOOP_CLICK_UPDATE: {len(loop_result['click_plan'])} clicks", file=sys.stderr)
+                except Exception as e:
+                    print(f"AGENT_LOOP_RERUN_ERR: {e}", file=sys.stderr)
+
             if self._cross_space and ctrl_mv != (0, 0) and self._ctrl_pos:
                 try:
                     color_under = int(np.array(grid)[self._ctrl_pos[0], self._ctrl_pos[1]]) if self._ctrl_pos[0] < 64 and self._ctrl_pos[1] < 64 else 0
@@ -1453,6 +1486,32 @@ class CrossResonanceV26(Agent):
                     print(f"CLICK_PROBE_DONE: no clickable positions found, fallback", file=sys.stderr)
                     self._click.plan(snap, self.sensor)
                 self._phase = 'execute'
+
+        # Agent Loop: ゲーム開始時に1回だけ実行（probe完了後）
+        if self._phase == 'plan' and not self._agent_loop_done and self._agent_loop and self._agent_loop.is_available:
+            try:
+                self._agent_loop_done = True
+                loop_result = self._agent_loop.run(
+                    grid, self._ctrl_pos or (32, 32), self.prev_grid,
+                    self._axiom_engine, self._jcross_runtime,
+                    self._frame, self._model.is_click_game
+                )
+                if loop_result:
+                    self._agent_loop_result = loop_result
+                    # jcrossルールを書き込む
+                    for rule_info in loop_result.get('jcross_rules', []):
+                        if self._jcross_runtime:
+                            self._jcross_runtime.rewrite_rule(rule_info['name'], rule_info['code'])
+                            print(f"AGENT_LOOP_RULE: {rule_info['name']}", file=sys.stderr)
+                    # クリック計画がある場合はSLM action planにセット
+                    if loop_result.get('click_plan'):
+                        self._slm_action_plan = {
+                            'action_type': 'click_sequence',
+                            'plan': loop_result['click_plan'],
+                        }
+                        print(f"AGENT_LOOP_CLICK: {len(loop_result['click_plan'])} clicks planned", file=sys.stderr)
+            except Exception as e:
+                print(f"AGENT_LOOP_ERR: {e}", file=sys.stderr)
 
         # PLAN
         if self._phase == 'plan':

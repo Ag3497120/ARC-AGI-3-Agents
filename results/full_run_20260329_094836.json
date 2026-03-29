@@ -1,0 +1,210 @@
+{
+  "timestamp": "20260329_094836",
+  "scorecard_id": "1c4471b8-d94e-4847-9e03-df19be604f5a",
+  "total_games": 25,
+  "games_run": 25,
+  "total_levels_completed": 2,
+  "total_actions": 3934,
+  "results": [
+    {
+      "game_id": "wa30-ee6fef47",
+      "levels_completed": 0,
+      "actions_taken": 200,
+      "status": "completed",
+      "errors": [],
+      "elapsed_seconds": 107.15
+    },
+    {
+      "game_id": "lp85-305b61c3",
+      "levels_completed": 1,
+      "actions_taken": 78,
+      "status": "completed",
+      "errors": [],
+      "elapsed_seconds": 42.18
+    },
+    {
+      "game_id": "cn04-65d47d14",
+      "levels_completed": 0,
+      "actions_taken": 150,
+      "status": "completed",
+      "errors": [],
+      "elapsed_seconds": 80.22
+    },
+    {
+      "game_id": "r11l-aa269680",
+      "levels_completed": 0,
+      "actions_taken": 60,
+      "status": "completed",
+      "errors": [],
+      "elapsed_seconds": 32.22
+    },
+    {
+      "game_id": "m0r0-dadda488",
+      "levels_completed": 1,
+      "actions_taken": 243,
+      "status": "completed",
+      "errors": [],
+      "elapsed_seconds": 133.82
+    },
+    {
+      "game_id": "tu93-2b534c15",
+      "levels_completed": 0,
+      "actions_taken": 50,
+      "status": "completed",
+      "errors": [],
+      "elapsed_seconds": 27.99
+    },
+    {
+      "game_id": "sp80-0ee2d095",
+      "levels_completed": 0,
+      "actions_taken": 30,
+      "status": "completed",
+      "errors": [],
+      "elapsed_seconds": 17.05
+    },
+    {
+      "game_id": "ar25-e3c63847",
+      "levels_completed": 0,
+      "actions_taken": 80,
+      "status": "completed",
+      "errors": [],
+      "elapsed_seconds": 45.59
+    },
+    {
+      "game_id": "tn36-ab4f63cc",
+      "levels_completed": 0,
+      "actions_taken": 61,
+      "status": "completed",
+      "errors": [],
+      "elapsed_seconds": 34.88
+    },
+    {
+      "game_id": "tr87-cd924810",
+      "levels_completed": 0,
+      "actions_taken": 128,
+      "status": "completed",
+      "errors": [],
+      "elapsed_seconds": 72.02
+    },
+    {
+      "game_id": "ft09-0d8bbf25",
+      "levels_completed": 0,
+      "actions_taken": 801,
+      "status": "completed",
+      "errors": [],
+      "elapsed_seconds": 443.82
+    },
+    {
+      "game_id": "su15-4c352900",
+      "levels_completed": 0,
+      "actions_taken": 49,
+      "status": "completed",
+      "errors": [],
+      "elapsed_seconds": 27.94
+    },
+    {
+      "game_id": "re86-4e57566e",
+      "levels_completed": 0,
+      "actions_taken": 100,
+      "status": "completed",
+      "errors": [],
+      "elapsed_seconds": 55.91
+    },
+    {
+      "game_id": "dc22-4c9bff3e",
+      "levels_completed": 0,
+      "actions_taken": 128,
+      "status": "completed",
+      "errors": [],
+      "elapsed_seconds": 70.98
+    },
+    {
+      "game_id": "ka59-9f096b4a",
+      "levels_completed": 0,
+      "actions_taken": 100,
+      "status": "completed",
+      "errors": [],
+      "elapsed_seconds": 56.12
+    },
+    {
+      "game_id": "ls20-9607627b",
+      "levels_completed": 0,
+      "actions_taken": 153,
+      "status": "completed",
+      "errors": [],
+      "elapsed_seconds": 85.43
+    },
+    {
+      "game_id": "s5i5-a48e4b1d",
+      "levels_completed": 0,
+      "actions_taken": 50,
+      "status": "completed",
+      "errors": [],
+      "elapsed_seconds": 28.01
+    },
+    {
+      "game_id": "sk48-41055498",
+      "levels_completed": 0,
+      "actions_taken": 223,
+      "status": "completed",
+      "errors": [],
+      "elapsed_seconds": 122.27
+    },
+    {
+      "game_id": "bp35-0a0ad940",
+      "levels_completed": 0,
+      "actions_taken": 26,
+      "status": "completed",
+      "errors": [],
+      "elapsed_seconds": 14.78
+    },
+    {
+      "game_id": "sb26-7fbdac44",
+      "levels_completed": 0,
+      "actions_taken": 801,
+      "status": "completed",
+      "errors": [],
+      "elapsed_seconds": 423.48
+    },
+    {
+      "game_id": "sc25-f9b21a2f",
+      "levels_completed": 0,
+      "actions_taken": 53,
+      "status": "completed",
+      "errors": [],
+      "elapsed_seconds": 28.95
+    },
+    {
+      "game_id": "lf52-271a04aa",
+      "levels_completed": 0,
+      "actions_taken": 90,
+      "status": "completed",
+      "errors": [],
+      "elapsed_seconds": 47.77
+    },
+    {
+      "game_id": "vc33-9851e02b",
+      "levels_completed": 0,
+      "actions_taken": 50,
+      "status": "completed",
+      "errors": [],
+      "elapsed_seconds": 27.34
+    },
+    {
+      "game_id": "g50t-5849a774",
+      "levels_completed": 0,
+      "actions_taken": 130,
+      "status": "completed",
+      "errors": [],
+      "elapsed_seconds": 69.89
+    },
+    {
+      "game_id": "cd82-fb555c5d",
+      "levels_completed": 0,
+      "actions_taken": 100,
+      "status": "completed",
+      "errors": [],
+      "elapsed_seconds": 53.22
+    }
+  ]
+}

@@ -190,43 +190,43 @@
 // [RULE:クリック行動 END]
 
 // [RULE:公理_1 START]
-// 確定等価式: cycle×block×near $= 行動0の効果
+// 確定等価式: cycle×scattered×mid $= 行動3の効果
 // 観測回数: 3
 
 // [RULE:公理_1 END]
 
 // [RULE:公理_0 START]
-// 確定等価式: cycle×block×near $= 行動3の効果
+// 確定等価式: swap×block×near $= 行動5の効果
 // 観測回数: 3
 
 // [RULE:公理_0 END]
 
 // [RULE:公理_4 START]
-// 確定等価式: cycle×scattered×mid $= 行動5の効果
+// 確定等価式: swap×block×mid $= 行動1の効果
 // 観測回数: 3
 
 // [RULE:公理_4 END]
 
 // [RULE:公理_5 START]
-// 確定等価式: swap×block×mid $= 行動1の効果
+// 確定等価式: cycle×scattered×far $= 行動1の効果
 // 観測回数: 3
 
 // [RULE:公理_5 END]
 
 // [RULE:公理_2 START]
-// 確定等価式: cycle×block×mid $= 行動1の効果
+// 確定等価式: swap×block×mid $= 行動5の効果
 // 観測回数: 3
 
 // [RULE:公理_2 END]
 
 // [RULE:公理_3 START]
-// 確定等価式: swap×block×near $= 行動0の効果
+// 確定等価式: multi×scattered×mid $= 行動2の効果
 // 観測回数: 3
 
 // [RULE:公理_3 END]
 
 // [RULE:公理_6 START]
-// 確定等価式: swap×block×far $= 行動4の効果
+// 確定等価式: cycle×scattered×mid $= 行動2の効果
 // 観測回数: 3
 
 // [RULE:公理_6 END]
@@ -238,7 +238,7 @@
 // [RULE:公理_8 END]
 
 // [RULE:公理_7 START]
-// 確定等価式: cycle×scattered×near $= 行動5の効果
+// 確定等価式: swap×block×far $= 行動0の効果
 // 観測回数: 3
 
 // [RULE:公理_7 END]
@@ -282,5 +282,9 @@
 // [RULE:SLM_block_state_change START]
 // 発見: ブロック状態変化
 // 行動によりブロックの色/状態が変化する
-// 変化パターン: {(5, 0): 50}
+// 変化パターン: {(9, 8): 36}
 // [RULE:SLM_block_state_change END]
+
+// [RULE:ゲーム分析_toggle START]
+// ゲームタイプ：切り替え // 現在の発見はありません。
+// [RULE:ゲーム分析_toggle END]
