@@ -1,0 +1,18 @@
+{
+  "timestamp": "20260329_024952",
+  "scorecard_id": "d72d63d9-3202-41bf-a3b2-d0120d131d92",
+  "total_games": 1,
+  "games_run": 1,
+  "total_levels_completed": 1,
+  "total_actions": 91,
+  "results": [
+    {
+      "game_id": "ls20-9607627b",
+      "levels_completed": 1,
+      "actions_taken": 91,
+      "status": "completed",
+      "errors": [],
+      "elapsed_seconds": 50.68
+    }
+  ]
+}

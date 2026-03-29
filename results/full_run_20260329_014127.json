@@ -1,0 +1,20 @@
+{
+  "timestamp": "20260329_014127",
+  "scorecard_id": "b6905965-4930-4dbe-a733-07ee6986c5b6",
+  "total_games": 1,
+  "games_run": 1,
+  "total_levels_completed": 1,
+  "total_actions": 45,
+  "results": [
+    {
+      "game_id": "ls20-9607627b",
+      "levels_completed": 1,
+      "actions_taken": 45,
+      "status": "error",
+      "errors": [
+        "[Errno 32] Broken pipe"
+      ],
+      "elapsed_seconds": 24.87
+    }
+  ]
+}

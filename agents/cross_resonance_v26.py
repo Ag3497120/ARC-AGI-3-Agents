@@ -690,10 +690,21 @@ class CrossResonanceV26(Agent):
                     elif exp.event_type == 'moved':
                         方向移動数[aidx] += 1
 
-        # ルール学習から壁開放情報（直近の反応イベントのみ）
+        # ルール学習から壁開放情報（修正版）
         if self._cross_space:
-            for exp in reversed(self._cross_space.experiences[-20:]):
-                if exp.event_type in ('wall_opened', 'reaction') and exp.details.get('change_type') == 'wall_opened':
+            for exp in reversed(self._cross_space.experiences[-30:]):
+                if exp.event_type in ('opened', 'wall_opened'):
+                    壁開放フレーム = exp.frame
+                    # 壁開放方向を推定
+                    if self._ctrl_pos:
+                        dr = exp.position[0] - self._ctrl_pos[0]
+                        dc = exp.position[1] - self._ctrl_pos[1]
+                        if abs(dr) > abs(dc):
+                            壁開放方向 = 0 if dr < 0 else 1
+                        else:
+                            壁開放方向 = 2 if dc < 0 else 3
+                    break
+                if exp.event_type in ('reaction',) and exp.details.get('change_type') == 'wall_opened':
                     壁開放フレーム = exp.frame
                     if self._ctrl_pos:
                         dr = exp.position[0] - self._ctrl_pos[0]
@@ -702,7 +713,7 @@ class CrossResonanceV26(Agent):
                             壁開放方向 = 0 if dr < 0 else 1
                         else:
                             壁開放方向 = 2 if dc < 0 else 3
-                    break  # 最新のものだけ
+                    break
 
         # 方向ごとの成功率（パーセント）
         方向成功率 = [0, 0, 0, 0]
@@ -1001,8 +1012,8 @@ class CrossResonanceV26(Agent):
                     self._last_progress_frame = self._frame
                 except Exception:
                     pass
-                # 体験記録: 移動（10フレームに1回）
-                if self._frame % 10 == 0 and self._ctrl_pos:
+                # 体験記録: 移動（5フレームに1回）（旧: 10）
+                if self._frame % 5 == 0 and self._ctrl_pos:
                     try:
                         _g = np.array(grid)
                         _color_at_pos = int(_g[self._ctrl_pos[0], self._ctrl_pos[1]]) if self._ctrl_pos[0] < 64 else 0
@@ -1081,6 +1092,19 @@ class CrossResonanceV26(Agent):
                                         "位置": list(self._ctrl_pos) if self._ctrl_pos else [32, 32],
                                         "領域": list(learned.effect_region) if learned.effect_region else [],
                                     })
+                                    # cross_spaceにもopened体験を記録（壁開放フレーム取得用）
+                                    if self._cross_space and self._ctrl_pos:
+                                        try:
+                                            self._cross_space.record(Experience(
+                                                frame=self._frame,
+                                                position=self._ctrl_pos,
+                                                colors_involved=set(),
+                                                event_type='opened',
+                                                action_taken=self._last_aidx,
+                                                details={'effect_region': list(learned.effect_region) if learned.effect_region else []}
+                                            ))
+                                        except Exception:
+                                            pass
                                 # If wall_opened, mark the opened cells as passable
                                 if learned.enables_path and learned.effect_region and self._smap:
                                     er = learned.effect_region
@@ -1361,13 +1385,19 @@ class CrossResonanceV26(Agent):
                 self.action_queue = route
             self._phase = 'execute'
 
-        # 動的ルール書き換え: スタックが20回になったらスタック脱出ルールを積極化
-        if self._stuck_counter == 20 and self._jcross_runtime:
+        # 動的ルール書き換え: スタックが10回になったら（旧: 20回）
+        if self._stuck_counter == 15 and self._jcross_runtime:
             _new_stuck_rule = '''関数 スタック脱出() {
-  // 体験から学んだ: 20回スタックした。より積極的に脱出
-  もし スタック回数 > 5 {
-    余り = (フレーム番号 + 前回の行動) % 4
-    返す 余り
+  // 体験から学んだ: 15回スタック。閾値を下げて積極脱出
+  もし スタック回数 > 8 {
+    最良 = 最良方向を探す()
+    もし 最良 >= 0 {
+      返す 最良
+    }
+    返す (フレーム番号 + 前回の行動) % 4
+  }
+  もし スタック回数 > 4 {
+    返す (前回の行動 + 2) % 4
   }
   返す -1
 }'''
