@@ -48,6 +48,13 @@
     返す 脱出
   }
 
+  // === 1.5 SLM行動計画がある場合 ===
+  もし SLM計画あり == 真 {
+    もし SLM方向 >= 0 {
+      返す SLM方向
+    }
+  }
+
   // === 2. 行動キューがある = Pythonの経路がある ===
   もし 長さ(行動キュー) > 0 {
     候補 = 行動キュー[0]
@@ -158,18 +165,16 @@
 
 // [RULE:スタック脱出 START]
 関数 スタック脱出() {
-  もし スタック回数 > 12 {
+  // 体験から学んだ: 15回スタック。閾値を下げて積極脱出
+  もし スタック回数 > 8 {
     最良 = 最良方向を探す()
     もし 最良 >= 0 {
       返す 最良
     }
-    返す フレーム番号 % 4
+    返す (フレーム番号 + 前回の行動) % 4
   }
-  もし スタック回数 > 6 {
-    もし 最近ブロック行動 >= 0 {
-      返す (最近ブロック行動 + 2) % 4
-    }
-    返す (前回の行動 + 1) % 4
+  もし スタック回数 > 4 {
+    返す (前回の行動 + 2) % 4
   }
   返す -1
 }
@@ -183,3 +188,93 @@
   返す 5
 }
 // [RULE:クリック行動 END]
+
+// [RULE:公理_1 START]
+// 確定等価式: cycle×block×near $= 行動0の効果
+// 観測回数: 3
+
+// [RULE:公理_1 END]
+
+// [RULE:公理_0 START]
+// 確定等価式: cycle×block×near $= 行動3の効果
+// 観測回数: 3
+
+// [RULE:公理_0 END]
+
+// [RULE:公理_4 START]
+// 確定等価式: cycle×scattered×mid $= 行動1の効果
+// 観測回数: 3
+
+// [RULE:公理_4 END]
+
+// [RULE:公理_5 START]
+// 確定等価式: swap×block×far $= 行動5の効果
+// 観測回数: 3
+
+// [RULE:公理_5 END]
+
+// [RULE:公理_2 START]
+// 確定等価式: cycle×block×mid $= 行動1の効果
+// 観測回数: 3
+
+// [RULE:公理_2 END]
+
+// [RULE:公理_3 START]
+// 確定等価式: swap×block×near $= 行動0の効果
+// 観測回数: 3
+
+// [RULE:公理_3 END]
+
+// [RULE:公理_6 START]
+// 確定等価式: cycle×scattered×near $= 行動2の効果
+// 観測回数: 3
+
+// [RULE:公理_6 END]
+
+// [RULE:公理_8 START]
+// 確定等価式: swap×block×mid $= 行動1の効果
+// 観測回数: 3
+
+// [RULE:公理_8 END]
+
+// [RULE:公理_7 START]
+// 確定等価式: cycle×scattered×near $= 行動5の効果
+// 観測回数: 3
+
+// [RULE:公理_7 END]
+
+// [RULE:公理_10 START]
+// 確定等価式: cycle×scattered×near $= 行動2の効果
+// 観測回数: 3
+
+// [RULE:公理_10 END]
+
+// [RULE:公理_11 START]
+// 確定等価式: cycle×scattered×far $= 行動2の効果
+// 観測回数: 3
+
+// [RULE:公理_11 END]
+
+// [RULE:公理_9 START]
+// 確定等価式: cycle×block×mid $= 行動0の効果
+// 観測回数: 3
+
+// [RULE:公理_9 END]
+
+// [RULE:公理_13 START]
+// 確定等価式: cycle×scattered×mid $= 行動3の効果
+// 観測回数: 3
+
+// [RULE:公理_13 END]
+
+// [RULE:公理_12 START]
+// 確定等価式: cycle×block×near $= 行動2の効果
+// 観測回数: 3
+
+// [RULE:公理_12 END]
+
+// [RULE:公理_14 START]
+// 確定等価式: swap×block×mid $= 行動1の効果
+// 観測回数: 3
+
+// [RULE:公理_14 END]

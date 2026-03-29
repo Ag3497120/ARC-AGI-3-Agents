@@ -56,6 +56,13 @@ try:
 except ImportError:
     HAS_AXIOM = False
 
+# SLMBridge: axiomの発見 → SLM(2B) → 具体的行動計画
+try:
+    from .cross_engine.slm_bridge import SLMBridge
+    HAS_SLM = True
+except ImportError:
+    HAS_SLM = False
+
 
 ALL_ACTIONS = [
     GameAction.ACTION1, GameAction.ACTION2,
@@ -620,6 +627,8 @@ class CrossResonanceV26(Agent):
         self._stuck_counter = 0
         self._last_progress_frame = 0
         self._axiom_engine = CrossAxiomEngine() if HAS_AXIOM else None
+        self._slm = SLMBridge() if HAS_SLM else None
+        self._slm_action_plan = None  # SLMが生成した行動計画
 
         # jcross soul runtime (Phase 2)
         if HAS_JCROSS:
@@ -1044,6 +1053,26 @@ class CrossResonanceV26(Agent):
                             rule_name = f"公理_{ax.axiom_id}"
                             self._jcross_runtime.rewrite_rule(rule_name, ax.jcross_rule)
                             print(f"AXIOM_CONFIRMED: id={ax.axiom_id} sig={ax.trigger_sig} obs={ax.observations}", file=sys.stderr)
+
+                            # SLMで行動計画に変換（axiom確定時のみ呼ぶ）
+                            if self._slm and self._slm.is_available and self._axiom_engine:
+                                try:
+                                    grid_ctx = self._slm.build_grid_context(
+                                        grid, self._ctrl_pos or (32, 32),
+                                        self._axiom_engine.discovered_rules
+                                    )
+                                    for rule_type in list(self._axiom_engine.discovered_rules.keys()):
+                                        plan = self._slm.translate_axiom_to_action(
+                                            rule_type,
+                                            {'cycle_colors': ax.trigger_sig},  # details from axiom
+                                            grid_ctx
+                                        )
+                                        if plan:
+                                            self._slm_action_plan = plan
+                                            print(f"SLM_PLAN: {plan['action_type']} {plan}", file=sys.stderr)
+                                            break
+                                except Exception as _slm_e:
+                                    print(f"SLM_ERR: {_slm_e}", file=sys.stderr)
                         elif ax.jcross_rule:
                             print(f"AXIOM_NEW: id={ax.axiom_id} sig={ax.trigger_sig} rule_type={list(self._axiom_engine.discovered_rules.keys())}", file=sys.stderr)
                 except Exception as e:
@@ -1480,6 +1509,30 @@ class CrossResonanceV26(Agent):
                 self._replan_cooldown = max(len(route), 3)
 
         self._prev_ctrl = self._ctrl_pos
+
+        # === SLM行動計画がある場合: クリックシーケンスを実行（jcross決定の前）===
+        if self._slm_action_plan and self._model.is_click_game:
+            _slm_plan = self._slm_action_plan
+            if _slm_plan.get("action_type") == "click_sequence" and _slm_plan.get("plan"):
+                _next_click = _slm_plan["plan"][0]
+                _pos = _next_click["pos"]
+                _remaining_clicks = _next_click["clicks"]
+                if _remaining_clicks > 0:
+                    self._last_click = _pos
+                    self._last_aidx = 5
+                    a = GameAction.ACTION6
+                    a.set_data({"x": _pos[1], "y": _pos[0]})
+                    a.reasoning = f"SLM click plan: pos={_pos} remaining={_remaining_clicks}"
+                    _next_click["clicks"] -= 1
+                    if _next_click["clicks"] <= 0:
+                        _slm_plan["plan"].pop(0)  # このブロックは完了
+                    if not _slm_plan["plan"]:
+                        self._slm_action_plan = None  # 全ブロック完了
+                    print(f"SLM_CLICK: pos={_pos} remaining={_remaining_clicks - 1}", file=sys.stderr)
+                    self.prev_grid = [row[:] for row in grid]
+                    self._actions += 1
+                    return a
+
         self.prev_grid = [row[:] for row in grid]; self._actions += 1
 
         if self._model.is_click_game:
@@ -1572,6 +1625,10 @@ class CrossResonanceV26(Agent):
                         "未訪問方向": _exp_summary["未訪問方向"],
                         "衝動方向": _exp_summary["衝動方向"],
                         "訪問済み数": _exp_summary["訪問済み数"],
+                        # === SLM行動計画 ===
+                        "SLM計画あり": bool(self._slm_action_plan),
+                        "SLM行動種類": self._slm_action_plan.get("action_type", "") if self._slm_action_plan else "",
+                        "SLM方向": self._slm_action_plan.get("direction", -1) if self._slm_action_plan else -1,
                     })
                     jcross_aidx = self._jcross_runtime.decide()
                     if jcross_aidx >= 0 and jcross_aidx < len(ALL_ACTIONS):
