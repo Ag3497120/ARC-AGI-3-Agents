@@ -209,19 +209,19 @@
 // [RULE:公理_0 END]
 
 // [RULE:公理_4 START]
-// 確定等価式: multi×block×far $= 行動2の効果
+// 確定等価式: cycle×scattered×mid $= 行動1の効果
 // 観測回数: 3
 
 // [RULE:公理_4 END]
 
 // [RULE:公理_5 START]
-// 確定等価式: cycle×scattered×far $= 行動1の効果
+// 確定等価式: cycle×scattered×near $= 行動1の効果
 // 観測回数: 3
 
 // [RULE:公理_5 END]
 
 // [RULE:公理_2 START]
-// 確定等価式: cycle×block×mid $= 行動3の効果
+// 確定等価式: cycle×block×mid $= 行動1の効果
 // 観測回数: 3
 
 // [RULE:公理_2 END]
@@ -233,19 +233,19 @@
 // [RULE:公理_3 END]
 
 // [RULE:公理_6 START]
-// 確定等価式: cycle×scattered×mid $= 行動2の効果
+// 確定等価式: cycle×scattered×near $= 行動3の効果
 // 観測回数: 3
 
 // [RULE:公理_6 END]
 
 // [RULE:公理_8 START]
-// 確定等価式: cycle×scattered×mid $= 行動5の効果
+// 確定等価式: swap×block×mid $= 行動2の効果
 // 観測回数: 3
 
 // [RULE:公理_8 END]
 
 // [RULE:公理_7 START]
-// 確定等価式: swap×block×far $= 行動0の効果
+// 確定等価式: cycle×scattered×near $= 行動1の効果
 // 観測回数: 3
 
 // [RULE:公理_7 END]
@@ -269,19 +269,19 @@
 // [RULE:公理_9 END]
 
 // [RULE:公理_13 START]
-// 確定等価式: cycle×scattered×mid $= 行動3の効果
+// 確定等価式: multi×block×mid $= 行動3の効果
 // 観測回数: 3
 
 // [RULE:公理_13 END]
 
 // [RULE:公理_12 START]
-// 確定等価式: multi×block×mid $= 行動2の効果
+// 確定等価式: swap×block×mid $= 行動3の効果
 // 観測回数: 3
 
 // [RULE:公理_12 END]
 
 // [RULE:公理_14 START]
-// 確定等価式: swap×block×mid $= 行動1の効果
+// 確定等価式: cycle×scattered×mid $= 行動1の効果
 // 観測回数: 3
 
 // [RULE:公理_14 END]
@@ -289,114 +289,156 @@
 // [RULE:SLM_block_state_change START]
 // 発見: ブロック状態変化
 // 行動によりブロックの色/状態が変化する
-// 変化パターン: {(5, 11): 246, (4, 11): 2591, (3, 11): 897, (9, 11): 41, (12, 11): 10, (0, 11): 53, (1, 11): 2}
+// 変化パターン: {(12, 3): 10, (9, 3): 15, (3, 12): 10, (3, 9): 15}
 // [RULE:SLM_block_state_change END]
 
 // [RULE:ゲーム分析_toggle START]
-// ゲームタイプ：トグル // 現在の発見はありません。
+// ゲームタイプ：トグル // デザイン：プレイヤーはゲームの状態を切り替えることができる。 // コード：toggle()を使用してゲームの状態を変更する。
 // [RULE:ゲーム分析_toggle END]
 
 // [RULE:ゲーム分析_pattern_match START]
-// ゲームはパターンマッチです。 // 揚げ色の発見は3、5、9、12です。
+// ゲームはパターンマッチです。 // 誘い方： // チェックサイクルの色を特定します。 // そのチェックサイクルは0, 1, 3, 5, 9, 12です。
 // [RULE:ゲーム分析_pattern_match END]
 
 // [RULE:ゲーム分析_click_pattern_match START]
-// クリックパターンマッチ // 色のサイクルは[3, 9, 10]です。
+// キャンバスをクリックし、色の周期性を見つけよう！ // 色のパターンが見つかったら、次のステージへ！
 // [RULE:ゲーム分析_click_pattern_match END]
 
 // [RULE:因果_5 START]
-// 因果等価式: 下 × 領域1 × 色corridor
-//   $= blocked
-// 観測: 3回 確定: True
-// この方向はブロックされる
+// 因果等価式: 下 × corridor × 色3
+//   $= blocked (観測3回)
+関数 回避_5(方向, 前方色) {
+  もし 方向 == 1 {
+    もし 前方色 == 3 {
+      返す 3
+    }
+  }
+  返す -1
+}
 // [RULE:因果_5 END]
 
 // [RULE:因果_4 START]
-// 因果等価式: 右 × 領域3 × 色corridor
-//   $= color_change
-// 観測: 3回 確定: True
+// 因果等価式: 右 × corridor × 色3
+//   $= color_change (観測3回)
+// 色変化パターン: [(12, 3), (3, 12), (9, 3)]
+関数 色変化_4(方向, 前方色) {
+  もし 方向 == 3 {
+    返す 3
+  }
+  返す -1
+}
 // [RULE:因果_4 END]
 
 // [RULE:因果_9 START]
-// 因果等価式: 上 × 領域0 × 色corridor
+// 因果等価式: 下 × 領域1 × 色corridor
 //   $= color_change
 // 観測: 3回 確定: True
 // [RULE:因果_9 END]
 
 // [RULE:因果_20 START]
-// 因果等価式: 左 × 領域('bottom', 'left') × 色0
-//   $= large_change
+// 因果等価式: 左 × 領域2 × 色corridor
+//   $= color_change
 // 観測: 3回 確定: True
 // [RULE:因果_20 END]
 
 // [RULE:因果_22 START]
-// 因果等価式: 右 × 領域('top', 'right') × 色10
-//   $= wall_open
+// 因果等価式: 下 × 領域1 × 色corridor
+//   $= color_change
 // 観測: 3回 確定: True
-// 壁開放領域: (14,35)-(31,52)
 // [RULE:因果_22 END]
 
 // [RULE:因果_6 START]
-// 因果等価式: 上 × 領域0 × 色corridor
-//   $= color_change
-// 観測: 3回 確定: True
+// 因果等価式: 上 × corridor × 色3
+//   $= color_change (観測3回)
+// 色変化パターン: [(3, 12), (3, 9), (12, 3)]
+関数 色変化_6(方向, 前方色) {
+  もし 方向 == 0 {
+    返す 0
+  }
+  返す -1
+}
 // [RULE:因果_6 END]
 
 // [RULE:因果_8 START]
-// 因果等価式: 左 × 領域2 × 色wall
-//   $= blocked
-// 観測: 3回 確定: True
-// この方向はブロックされる
+// 因果等価式: 左 × wall × 色4
+//   $= blocked (観測3回)
+関数 回避_8(方向, 前方色) {
+  もし 方向 == 2 {
+    もし 前方色 == 4 {
+      返す 0
+    }
+  }
+  返す -1
+}
 // [RULE:因果_8 END]
 
 // [RULE:因果_7 START]
-// 因果等価式: 左 × 領域2 × 色wall
-//   $= color_change
-// 観測: 3回 確定: True
+// 因果等価式: 左 × wall × 色4
+//   $= color_change (観測3回)
+// 色変化パターン: [(3, 12), (12, 3), (3, 9)]
+関数 色変化_7(方向, 前方色) {
+  もし 方向 == 2 {
+    返す 2
+  }
+  返す -1
+}
 // [RULE:因果_7 END]
 
 // [RULE:因果_39 START]
-// 因果等価式: 下 × 領域('bottom', 'center') × 色9
-//   $= blocked
+// 因果等価式: クリック × 領域5 × 色corridor
+//   $= wall_open
 // 観測: 3回 確定: True
-// この方向はブロックされる
+// 壁開放領域: (0,0)-(0,0)
 // [RULE:因果_39 END]
 
 // [RULE:因果_13 START]
-// 因果等価式: 上 × 領域('mid', 'center') × 色3
-//   $= large_change
+// 因果等価式: 下 × 領域1 × 色corridor
+//   $= blocked
 // 観測: 3回 確定: True
+// この方向はブロックされる
 // [RULE:因果_13 END]
 
 // [RULE:因果_45 START]
-// 因果等価式: 右 × 領域('bottom', 'right') × 色3
-//   $= large_change
+// 因果等価式: 下 × 領域1 × 色corridor
+//   $= grid_change
 // 観測: 3回 確定: True
 // [RULE:因果_45 END]
 
 // [RULE:因果_65 START]
-// 因果等価式: 右 × 領域('top', 'left') × 色11
-//   $= block_change
+// 因果等価式: 右 × 領域3 × 色corridor
+//   $= color_change
 // 観測: 3回 確定: True
 // [RULE:因果_65 END]
 
 // [RULE:因果_18 START]
-// 因果等価式: 左 × 領域2 × 色wall
-//   $= blocked
-// 観測: 3回 確定: True
-// この方向はブロックされる
+// 因果等価式: 左 × wall × 色4
+//   $= blocked (観測3回)
+関数 回避_18(方向, 前方色) {
+  もし 方向 == 2 {
+    もし 前方色 == 4 {
+      返す 0
+    }
+  }
+  返す -1
+}
 // [RULE:因果_18 END]
 
 // [RULE:因果_16 START]
-// 因果等価式: 上 × 領域0 × 色wall
-//   $= blocked
-// 観測: 3回 確定: True
-// この方向はブロックされる
+// 因果等価式: 上 × wall × 色4
+//   $= blocked (観測3回)
+関数 回避_16(方向, 前方色) {
+  もし 方向 == 0 {
+    もし 前方色 == 4 {
+      返す 2
+    }
+  }
+  返す -1
+}
 // [RULE:因果_16 END]
 
 // [RULE:因果_21 START]
-// 因果等価式: 下 × 領域1 × 色corridor
-//   $= color_change
+// 因果等価式: 左 × 領域2 × 色corridor
+//   $= grid_change
 // 観測: 3回 確定: True
 // [RULE:因果_21 END]
 
@@ -408,22 +450,29 @@
 // [RULE:因果_49 END]
 
 // [RULE:因果_2 START]
-// 因果等価式: 左 × 領域('bottom', 'right') × 色3
+// 因果等価式: 左 × 領域2 × 色corridor
 //   $= wall_open
 // 観測: 3回 確定: True
-// 壁開放領域: (48,15)-(59,47)
+// 壁開放領域: (0,0)-(0,0)
 // [RULE:因果_2 END]
 
 // [RULE:因果_1 START]
-// 因果等価式: 下 × 領域('bottom', 'left') × 色5
-//   $= block_change
+// 因果等価式: クリック × 領域5 × 色wall
+//   $= blocked
 // 観測: 3回 確定: True
+// この方向はブロックされる
 // [RULE:因果_1 END]
 
 // [RULE:因果_17 START]
-// 因果等価式: 左 × 領域2 × 色wall
-//   $= color_change
-// 観測: 3回 確定: True
+// 因果等価式: 左 × wall × 色4
+//   $= color_change (観測3回)
+// 色変化パターン: [(0, 5)]
+関数 色変化_17(方向, 前方色) {
+  もし 方向 == 2 {
+    返す 2
+  }
+  返す -1
+}
 // [RULE:因果_17 END]
 
 // [RULE:因果_25 START]
@@ -434,7 +483,7 @@
 // [RULE:因果_25 END]
 
 // [RULE:因果_26 START]
-// 因果等価式: 右 × 領域3 × 色wall
+// 因果等価式: 下 × 領域1 × 色wall
 //   $= blocked
 // 観測: 3回 確定: True
 // この方向はブロックされる
@@ -475,61 +524,79 @@
 // [RULE:因果_52 END]
 
 // [RULE:因果_12 START]
-// 因果等価式: 左 × 領域('top', 'center') × 色5
-//   $= wall_open
+// 因果等価式: 右 × 領域3 × 色wall
+//   $= blocked
 // 観測: 3回 確定: True
-// 壁開放領域: (14,22)-(17,41)
+// この方向はブロックされる
 // [RULE:因果_12 END]
 
 // [RULE:因果_24 START]
-// 因果等価式: 左 × 領域2 × 色corridor
-//   $= color_change
-// 観測: 3回 確定: True
+// 因果等価式: 下 × wall × 色4
+//   $= blocked (観測3回)
+関数 回避_24(方向, 前方色) {
+  もし 方向 == 1 {
+    もし 前方色 == 4 {
+      返す 3
+    }
+  }
+  返す -1
+}
 // [RULE:因果_24 END]
 
 // [RULE:因果_3 START]
-// 因果等価式: 右 × 領域('bottom', 'left') × 色3
-//   $= wall_open
+// 因果等価式: 右 × 領域3 × 色corridor
+//   $= wall_close
 // 観測: 3回 確定: True
-// 壁開放領域: (48,15)-(59,47)
 // [RULE:因果_3 END]
 
 // [RULE:因果_43 START]
-// 因果等価式: 右 × 領域('bottom', 'center') × 色3
-//   $= wall_open
+// 因果等価式: 右 × 領域3 × 色corridor
+//   $= blocked
 // 観測: 3回 確定: True
-// 壁開放領域: (48,15)-(59,26)
+// この方向はブロックされる
 // [RULE:因果_43 END]
 
 // [RULE:因果_30 START]
-// 因果等価式: 下 × 領域('bottom', 'left') × 色14
-//   $= blocked
-// 観測: 3回 確定: True
-// この方向はブロックされる
+// 因果等価式: 右 × wall × 色4
+//   $= blocked (観測3回)
+関数 回避_30(方向, 前方色) {
+  もし 方向 == 3 {
+    もし 前方色 == 4 {
+      返す 1
+    }
+  }
+  返す -1
+}
 // [RULE:因果_30 END]
 
 // [RULE:因果_31 START]
-// 因果等価式: 左 × 領域('bottom', 'left') × 色14
-//   $= blocked
-// 観測: 3回 確定: True
-// この方向はブロックされる
+// 因果等価式: 下 × corridor × 色3
+//   $= color_change (観測3回)
+// 色変化パターン: [(12, 3), (9, 3), (3, 12)]
+関数 色変化_31(方向, 前方色) {
+  もし 方向 == 1 {
+    返す 1
+  }
+  返す -1
+}
 // [RULE:因果_31 END]
 
 // [RULE:因果_0 START]
-// 因果等価式: 上 × 領域('bottom', 'left') × 色7
-//   $= block_change
+// 因果等価式: 上 × 領域0 × 色corridor
+//   $= wall_open
 // 観測: 3回 確定: True
+// 壁開放領域: (0,0)-(0,0)
 // [RULE:因果_0 END]
 
 // [RULE:因果_68 START]
-// 因果等価式: 下 × 領域('top', 'left') × 色11
-//   $= block_change
+// 因果等価式: 上 × 領域0 × 色corridor
+//   $= color_change
 // 観測: 3回 確定: True
 // [RULE:因果_68 END]
 
 // [RULE:因果_33 START]
-// 因果等価式: 下 × 領域('mid', 'center') × 色1
-//   $= block_change
+// 因果等価式: 右 × 領域3 × 色corridor
+//   $= color_change
 // 観測: 3回 確定: True
 // [RULE:因果_33 END]
 
@@ -546,10 +613,16 @@
 // [RULE:因果_107 END]
 
 // [RULE:因果_14 START]
-// 因果等価式: 右 × 領域3 × 色corridor
-//   $= blocked
-// 観測: 3回 確定: True
-// この方向はブロックされる
+// 因果等価式: 右 × corridor × 色5
+//   $= blocked (観測3回)
+関数 回避_14(方向, 前方色) {
+  もし 方向 == 3 {
+    もし 前方色 == 5 {
+      返す 1
+    }
+  }
+  返す -1
+}
 // [RULE:因果_14 END]
 
 // [RULE:因果_51 START]
@@ -560,7 +633,7 @@
 // [RULE:因果_51 END]
 
 // [RULE:因果_62 START]
-// 因果等価式: クリック × 領域('mid', 'center') × 色8
+// 因果等価式: 下 × 領域1 × 色corridor
 //   $= blocked
 // 観測: 3回 確定: True
 // この方向はブロックされる
@@ -574,32 +647,165 @@
 // [RULE:因果_75 END]
 
 // [RULE:因果_10 START]
-// 因果等価式: 上 × 領域0 × 色corridor
+// 因果等価式: 下 × 領域1 × 色corridor
 //   $= color_change
 // 観測: 3回 確定: True
 // [RULE:因果_10 END]
 
 // [RULE:因果_11 START]
-// 因果等価式: 上 × 領域0 × 色wall
-//   $= color_change
+// 因果等価式: 下 × 領域1 × 色corridor
+//   $= grid_change
 // 観測: 3回 確定: True
 // [RULE:因果_11 END]
 
 // [RULE:因果_46 START]
-// 因果等価式: 右 × 領域('bottom', 'right') × 色3
-//   $= wall_open
+// 因果等価式: 上 × 領域0 × 色corridor
+//   $= blocked
 // 観測: 3回 確定: True
-// 壁開放領域: (48,36)-(59,47)
+// この方向はブロックされる
 // [RULE:因果_46 END]
 
 // [RULE:因果_34 START]
-// 因果等価式: 左 × 領域('mid', 'right') × 色0
-//   $= block_change
+// 因果等価式: 下 × 領域1 × 色corridor
+//   $= color_change
 // 観測: 3回 確定: True
 // [RULE:因果_34 END]
 
 // [RULE:因果_15 START]
-// 因果等価式: 上 × 領域0 × 色wall
+// 因果等価式: 上 × wall × 色4
+//   $= color_change (観測3回)
+// 色変化パターン: [(5, 0)]
+関数 色変化_15(方向, 前方色) {
+  もし 方向 == 0 {
+    返す 0
+  }
+  返す -1
+}
+// [RULE:因果_15 END]
+
+// [RULE:因果_19 START]
+// 因果等価式: 左 × 領域2 × 色corridor
+//   $= blocked
+// 観測: 3回 確定: True
+// この方向はブロックされる
+// [RULE:因果_19 END]
+
+// [RULE:因果_32 START]
+// 因果等価式: 右 × 領域3 × 色corridor
+//   $= wall_close
+// 観測: 3回 確定: True
+// [RULE:因果_32 END]
+
+// [RULE:因果_28 START]
+// 因果等価式: 上 × wall × 色4
+//   $= blocked (観測3回)
+関数 回避_28(方向, 前方色) {
+  もし 方向 == 0 {
+    もし 前方色 == 4 {
+      返す 2
+    }
+  }
+  返す -1
+}
+// [RULE:因果_28 END]
+
+// [RULE:因果_27 START]
+// 因果等価式: 下 × 領域1 × 色corridor
 //   $= color_change
 // 観測: 3回 確定: True
-// [RULE:因果_15 END]
+// [RULE:因果_27 END]
+
+// [RULE:因果_23 START]
+// 因果等価式: 左 × corridor × 色3
+//   $= color_change (観測3回)
+// 色変化パターン: [(3, 12), (12, 3), (3, 9)]
+関数 色変化_23(方向, 前方色) {
+  もし 方向 == 2 {
+    返す 2
+  }
+  返す -1
+}
+// [RULE:因果_23 END]
+
+// [RULE:因果_48 START]
+// 因果等価式: 左 × 領域2 × 色corridor
+//   $= grid_change
+// 観測: 3回 確定: True
+// [RULE:因果_48 END]
+
+// [RULE:因果_53 START]
+// 因果等価式: クリック × 領域5 × 色corridor
+//   $= blocked
+// 観測: 3回 確定: True
+// この方向はブロックされる
+// [RULE:因果_53 END]
+
+// [RULE:因果_59 START]
+// 因果等価式: クリック × 領域5 × 色corridor
+//   $= blocked
+// 観測: 3回 確定: True
+// この方向はブロックされる
+// [RULE:因果_59 END]
+
+// [RULE:因果_58 START]
+// 因果等価式: 右 × 領域3 × 色corridor
+//   $= color_change
+// 観測: 3回 確定: True
+// [RULE:因果_58 END]
+
+// [RULE:因果_42 START]
+// 因果等価式: 左 × 領域2 × 色corridor
+//   $= blocked
+// 観測: 3回 確定: True
+// この方向はブロックされる
+// [RULE:因果_42 END]
+
+// [RULE:因果_60 START]
+// 因果等価式: 右 × 領域3 × 色corridor
+//   $= blocked
+// 観測: 3回 確定: True
+// この方向はブロックされる
+// [RULE:因果_60 END]
+
+// [RULE:因果_63 START]
+// 因果等価式: 右 × 領域3 × 色corridor
+//   $= color_change
+// 観測: 3回 確定: True
+// [RULE:因果_63 END]
+
+// [RULE:因果_67 START]
+// 因果等価式: 上 × 領域0 × 色corridor
+//   $= grid_change
+// 観測: 3回 確定: True
+// [RULE:因果_67 END]
+
+// [RULE:因果_69 START]
+// 因果等価式: 上 × 領域0 × 色corridor
+//   $= blocked
+// 観測: 3回 確定: True
+// この方向はブロックされる
+// [RULE:因果_69 END]
+
+// [RULE:因果_73 START]
+// 因果等価式: 下 × 領域1 × 色corridor
+//   $= grid_change
+// 観測: 3回 確定: True
+// [RULE:因果_73 END]
+
+// [RULE:因果_54 START]
+// 因果等価式: 下 × 領域1 × 色corridor
+//   $= grid_change
+// 観測: 3回 確定: True
+// [RULE:因果_54 END]
+
+// [RULE:因果_29 START]
+// 因果等価式: 右 × wall × 色4
+//   $= color_change (観測3回)
+// 色変化パターン: [(12, 3), (3, 12), (9, 3)]
+関数 色変化_29(方向, 前方色) {
+  もし 方向 == 3 {
+    返す 3
+  }
+  返す -1
+}
+// [RULE:因果_29 END]

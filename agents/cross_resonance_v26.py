@@ -638,6 +638,7 @@ class CrossResonanceV26(Agent):
         self._agent_loop = CrossAgentLoop() if HAS_AGENT_LOOP else None
         self._agent_loop_done = False  # ゲーム開始時に1回だけ実行
         self._agent_loop_result = None
+        self._processed_axiom_ids: set = set()  # 処理済みaxiom_id（AGENT_LOOPの重複実行防止）
 
         # jcross soul runtime (Phase 2)
         if HAS_JCROSS:
@@ -1134,11 +1135,17 @@ class CrossResonanceV26(Agent):
                 except Exception as e:
                     print(f"CAUSAL_ERR: {e}", file=sys.stderr)
 
-            # axiom確定時にAgent Loopを再実行（色サイクル発見後など）
-            if self._agent_loop and self._agent_loop.is_available:
+            # axiom確定時にAgent Loopを再実行（同じaxiomでは1回のみ）
+            if self._agent_loop and self._agent_loop.is_available and self._axiom_engine:
                 try:
-                    _new_axioms_count = len(self._axiom_engine.events) if self._axiom_engine else 0
-                    if _new_axioms_count > 0:
+                    _confirmed_axioms = [ax for ax in self._axiom_engine.causal_axioms if ax.confirmed]
+                    _confirmed_ids = [ax.axiom_id for ax in _confirmed_axioms]
+                    _already_processed = getattr(self, '_processed_axiom_ids', set())
+                    _unprocessed = [aid for aid in _confirmed_ids if aid not in _already_processed]
+                    if _unprocessed:
+                        if not hasattr(self, '_processed_axiom_ids'):
+                            self._processed_axiom_ids = set()
+                        self._processed_axiom_ids.update(_unprocessed)
                         loop_result = self._agent_loop.run(
                             grid, self._ctrl_pos or (32, 32), self.prev_grid,
                             self._axiom_engine, self._jcross_runtime,
@@ -1691,21 +1698,25 @@ class CrossResonanceV26(Agent):
                     pass
                 a = GameAction.ACTION6; a.set_data({"x": 32, "y": 32}); a.reasoning = "fallback"; return a
         else:
-            # シミュレーションベースの行動選択（因果等価式から未来を予測）
+            # シミュレーションベースの行動選択（maze型では使わない）
             sim_action = None
-            sim_prediction = None
+            _prediction = None  # 変数名をpredictionから変更（スコープ問題回避）
             if self._axiom_engine and self._ctrl_pos:
                 try:
-                    best_action, prediction = self._axiom_engine.get_best_action(
-                        self._ctrl_pos, grid,
-                        corridor_colors=self._probe_corridor_colors,
-                        available_actions=list(range(min(4, len(ALL_ACTIONS))))
-                    )
-                    if best_action is not None and prediction and prediction['confidence'] >= 0.6:
-                        sim_action = best_action
-                        sim_prediction = prediction
-                        print(f"SIMULATE: action={best_action} predicted={prediction['predicted_effect']} "
-                              f"conf={prediction['confidence']:.2f}", file=sys.stderr)
+                    # ゲーム種類判定
+                    game_type = self._axiom_engine.detect_game_type(self._model.is_click_game)
+
+                    # maze型ではSIMULATEを使わない（Pythonの経路計画を信頼）
+                    if game_type != 'maze':
+                        best_action, _prediction = self._axiom_engine.get_best_action(
+                            self._ctrl_pos, grid,
+                            corridor_colors=self._probe_corridor_colors,
+                            available_actions=list(range(min(4, len(ALL_ACTIONS))))
+                        )
+                        if best_action is not None and _prediction and _prediction['confidence'] >= 0.6:
+                            sim_action = best_action
+                            print(f"SIMULATE: action={best_action} predicted={_prediction['predicted_effect']} "
+                                  f"conf={_prediction['confidence']:.2f} game={game_type}", file=sys.stderr)
                 except Exception as e:
                     print(f"SIMULATE_ERR: {e}", file=sys.stderr)
 
@@ -1755,7 +1766,7 @@ class CrossResonanceV26(Agent):
                         "SLM方向": self._slm_action_plan.get("direction", -1) if self._slm_action_plan else -1,
                         # === シミュレーション予測 ===
                         "シミュレーション行動": sim_action if sim_action is not None else -1,
-                        "シミュレーション信頼度": int(sim_prediction['confidence'] * 100) if sim_prediction else 0,
+                        "シミュレーション信頼度": int(_prediction['confidence'] * 100) if _prediction else 0,
                     })
                     jcross_aidx = self._jcross_runtime.decide()
                     if jcross_aidx >= 0 and jcross_aidx < len(ALL_ACTIONS):

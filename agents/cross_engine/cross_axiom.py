@@ -615,6 +615,44 @@ class CrossAxiomEngine:
         """検出された色サイクルを返す"""
         return self._detected_cycles
 
+    def detect_game_type(self, is_click_game, action_model=None) -> str:
+        """因果等価式のパターンからゲーム種類を判定
+
+        Returns:
+            'maze' — 移動メインのゲーム（ls20, m0r0）
+            'click_cycle' — 色サイクルクリックゲーム（ft09）
+            'click_toggle' — トグルクリックゲーム
+            'unknown'
+        """
+        if not self.causal_axioms:
+            return 'unknown'
+
+        # 統計
+        n_blocked = sum(1 for a in self.causal_axioms if a.effect_sig[0] == 'blocked')
+        n_moved = sum(1 for a in self.causal_axioms if a.effect_sig[0] == 'moved')
+        n_wall_open = sum(1 for a in self.causal_axioms if a.effect_sig[0] == 'wall_open')
+        n_color_change = sum(1 for a in self.causal_axioms if a.effect_sig[0] == 'color_change')
+        n_total = len(self.causal_axioms)
+
+        # 色サイクルが検出されていればclick_cycle
+        if self.get_detected_cycles():
+            if is_click_game:
+                return 'click_cycle'
+
+        # clickゲームで色変化が多ければclick_toggle
+        if is_click_game and n_color_change > n_total * 0.3:
+            return 'click_toggle'
+
+        # keyboard(非click)でblocked+movedが多ければmaze
+        if not is_click_game:
+            return 'maze'
+
+        # clickゲームだがパターン不明
+        if is_click_game:
+            return 'click_toggle'
+
+        return 'unknown'
+
     def simulate(self, action_idx: int, player_pos, grid,
                  corridor_colors=None) -> Optional[Dict[str, Any]]:
         """確定等価式から行動の結果を予測 — v2"""
@@ -687,26 +725,72 @@ class CrossAxiomEngine:
         return best
 
     def _generate_causal_jcross(self, axiom: 'CausalAxiom') -> str:
-        """因果等価式をjcross形式に変換"""
+        """因果等価式から実行可能なjcrossコードを生成（テンプレートエンジン）"""
         action_names = {0: '上', 1: '下', 2: '左', 3: '右', 4: '行動5', 5: 'クリック'}
         action_name = action_names.get(axiom.action_idx, f'行動{axiom.action_idx}')
-
-        region = axiom.context_sig[0]
-        color = axiom.context_sig[1]
         effect = axiom.effect_details.get('type', 'unknown')
 
-        lines = []
-        lines.append(f"// 因果等価式: {action_name} × 領域{region} × 色{color}")
-        lines.append(f"//   $= {effect}")
-        lines.append(f"// 観測: {axiom.observations}回 確定: {axiom.confirmed}")
+        # コンテキストから条件を抽出
+        # context_sig = (action_idx, 'corridor'/'wall', color_ahead, color_under)
+        ahead_type = axiom.context_sig[1]  # 'corridor' or 'wall'
+        color_ahead = axiom.context_sig[2]
+        color_under = axiom.context_sig[3]
 
-        if effect == 'wall_open':
-            r = axiom.effect_details.get('region', (0, 0, 0, 0))
-            lines.append(f"// 壁開放領域: ({r[0]},{r[1]})-({r[2]},{r[3]})")
-        elif effect == 'player_move':
-            d = axiom.effect_details.get('delta', (0, 0))
-            lines.append(f"// 移動量: ({d[0]},{d[1]})")
-        elif effect == 'blocked':
-            lines.append(f"// この方向はブロックされる")
+        lines = []
+        lines.append(f"// 因果等価式: {action_name} × {ahead_type} × 色{color_ahead}")
+        lines.append(f"//   $= {effect} (観測{axiom.observations}回)")
+
+        if effect == 'blocked':
+            # ブロック: この色の方向を避ける
+            alt_action = (axiom.action_idx + 2) % 4  # 反対方向
+            alt2 = (axiom.action_idx + 1) % 4  # 90度
+            lines.append(f"関数 回避_{axiom.axiom_id}(方向, 前方色) {{")
+            lines.append(f"  もし 方向 == {axiom.action_idx} {{")
+            lines.append(f"    もし 前方色 == {color_ahead} {{")
+            lines.append(f"      返す {alt_action}")
+            lines.append(f"    }}")
+            lines.append(f"  }}")
+            lines.append(f"  返す -1")
+            lines.append(f"}}")
+
+        elif effect == 'wall_open':
+            # 壁開放: この方向+色の組み合わせで壁が開く → この方向を優先
+            lines.append(f"関数 壁開放_{axiom.axiom_id}(方向, 前方色) {{")
+            lines.append(f"  もし 方向 == {axiom.action_idx} {{")
+            lines.append(f"    もし 前方色 == {color_ahead} {{")
+            lines.append(f"      返す {axiom.action_idx}")
+            lines.append(f"    }}")
+            lines.append(f"  }}")
+            lines.append(f"  返す -1")
+            lines.append(f"}}")
+
+        elif effect == 'color_change':
+            # 色変化: この方向で色が変わる（クリックゲームの手がかり）
+            transitions = axiom.effect_details.get('transitions', {})
+            trans_str = str(list(transitions.keys())[:3])
+            lines.append(f"// 色変化パターン: {trans_str}")
+            lines.append(f"関数 色変化_{axiom.axiom_id}(方向, 前方色) {{")
+            lines.append(f"  もし 方向 == {axiom.action_idx} {{")
+            lines.append(f"    返す {axiom.action_idx}")
+            lines.append(f"  }}")
+            lines.append(f"  返す -1")
+            lines.append(f"}}")
+
+        elif effect == 'moved':
+            # 移動成功: この方向+色は安全
+            delta = axiom.effect_details.get('delta', (0, 0))
+            lines.append(f"// 移動量: ({delta[0]},{delta[1]})")
+            lines.append(f"関数 安全移動_{axiom.axiom_id}(方向, 前方色) {{")
+            lines.append(f"  もし 方向 == {axiom.action_idx} {{")
+            lines.append(f"    もし 前方色 == {color_ahead} {{")
+            lines.append(f"      返す {axiom.action_idx}")
+            lines.append(f"    }}")
+            lines.append(f"  }}")
+            lines.append(f"  返す -1")
+            lines.append(f"}}")
+
+        else:
+            # その他: コメントのみ
+            lines.append(f"// 未分類の効果: {effect}")
 
         return '\n'.join(lines)
