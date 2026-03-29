@@ -49,6 +49,13 @@ try:
 except ImportError:
     HAS_JCROSS = False
 
+# CrossAxiomEngine: Cross6軸による事象捕捉 → jcross等価式の動的生成
+try:
+    from .cross_engine.cross_axiom import CrossAxiomEngine
+    HAS_AXIOM = True
+except ImportError:
+    HAS_AXIOM = False
+
 
 ALL_ACTIONS = [
     GameAction.ACTION1, GameAction.ACTION2,
@@ -612,6 +619,7 @@ class CrossResonanceV26(Agent):
         self._visited_positions: Set[Tuple[int,int]] = set()
         self._stuck_counter = 0
         self._last_progress_frame = 0
+        self._axiom_engine = CrossAxiomEngine() if HAS_AXIOM else None
 
         # jcross soul runtime (Phase 2)
         if HAS_JCROSS:
@@ -655,6 +663,23 @@ class CrossResonanceV26(Agent):
             self._jcross_exp_buffer = []
         except Exception as e:
             print(f"JCROSS_MEM_ERR: {e}", file=sys.stderr)
+
+    def _get_avail_ints(self) -> list:
+        """GameAction or int の利用可能行動リストをint(0-indexed)に変換"""
+        _avail = []
+        for a in (self._model.available if hasattr(self._model, 'available') else range(4)):
+            if isinstance(a, int):
+                _avail.append(a)
+            elif hasattr(a, 'value'):
+                _avail.append(a.value - 1)  # GameAction.ACTION1=1 → 0
+            else:
+                try:
+                    _avail.append(int(a) - 1)
+                except (ValueError, TypeError):
+                    pass
+        if not _avail:
+            _avail = [0, 1, 2, 3]
+        return _avail
 
     def _build_impulse_list(self):
         """ripple衝動をjcross形式に変換"""
@@ -1003,6 +1028,27 @@ class CrossResonanceV26(Agent):
                 except Exception as e:
                     print(f"RIPPLE_ERR: {e}", file=sys.stderr)
 
+            # CrossAxiomEngine: フレーム差分をCross6軸で分析 → 等価式生成
+            if self._axiom_engine and self.prev_grid is not None:
+                try:
+                    new_axioms = self._axiom_engine.process_frame(
+                        self._frame,
+                        self.prev_grid,
+                        grid,
+                        self._ctrl_pos or (32, 32),
+                        self._last_aidx,
+                    )
+                    for ax in new_axioms:
+                        if ax.confirmed and ax.jcross_rule and self._jcross_runtime:
+                            # 確定した等価式をsoul.jcrossに書き込む
+                            rule_name = f"公理_{ax.axiom_id}"
+                            self._jcross_runtime.rewrite_rule(rule_name, ax.jcross_rule)
+                            print(f"AXIOM_CONFIRMED: id={ax.axiom_id} sig={ax.trigger_sig} obs={ax.observations}", file=sys.stderr)
+                        elif ax.jcross_rule:
+                            print(f"AXIOM_NEW: id={ax.axiom_id} sig={ax.trigger_sig} rule_type={list(self._axiom_engine.discovered_rules.keys())}", file=sys.stderr)
+                except Exception as e:
+                    print(f"AXIOM_ERR: {e}", file=sys.stderr)
+
             if self._cross_space and ctrl_mv != (0, 0) and self._ctrl_pos:
                 try:
                     color_under = int(np.array(grid)[self._ctrl_pos[0], self._ctrl_pos[1]]) if self._ctrl_pos[0] < 64 and self._ctrl_pos[1] < 64 else 0
@@ -1222,7 +1268,7 @@ class CrossResonanceV26(Agent):
                     "前回の行動": self._last_aidx,
                     "移動したか": bool(self._ctrl_pos != self._prev_ctrl) if self._prev_ctrl else False,
                     "差分あり": bool(snap.diff is not None and snap.diff.has_changes) if snap else False,
-                    "利用可能行動": list(self._model.available),
+                    "利用可能行動": self._get_avail_ints(),
                     "走路の色": list(self._probe_corridor_colors),
                     "壁の色": [],
                     "スタック回数": self._stuck_counter,
@@ -1508,7 +1554,7 @@ class CrossResonanceV26(Agent):
                         "前回の行動": self._last_aidx,
                         "移動したか": bool(self._ctrl_pos != self._prev_ctrl) if self._prev_ctrl else False,
                         "差分あり": bool(snap.diff is not None and snap.diff.has_changes) if snap else False,
-                        "利用可能行動": list(self._model.available),
+                        "利用可能行動": self._get_avail_ints(),
                         "走路の色": list(self._probe_corridor_colors),
                         "スタック回数": self._stuck_counter,
                         "クリックゲーム": bool(self._model.is_click_game),
