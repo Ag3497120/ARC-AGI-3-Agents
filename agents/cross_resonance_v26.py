@@ -39,6 +39,16 @@ try:
 except ImportError:
     HAS_CROSS_SPACE = False
 
+# jcross soul system (Phase 2: try first, fallback to Python)
+try:
+    import os as _os
+    from .cross_engine.jcross_runtime import JCrossRuntime
+    _JCROSS_SOUL_PATH = _os.path.join(_os.path.dirname(__file__), 'cross_engine', 'soul.jcross')
+    _JCROSS_MEMORY_PATH = _os.path.join(_os.path.dirname(__file__), 'cross_engine', 'memory.jcross')
+    HAS_JCROSS = True
+except ImportError:
+    HAS_JCROSS = False
+
 
 ALL_ACTIONS = [
     GameAction.ACTION1, GameAction.ACTION2,
@@ -603,6 +613,141 @@ class CrossResonanceV26(Agent):
         self._stuck_counter = 0
         self._last_progress_frame = 0
 
+        # jcross soul runtime (Phase 2)
+        if HAS_JCROSS:
+            try:
+                # memory.jcrossをリセット（レベル間の体験漏洩を防ぐ）
+                try:
+                    with open(_JCROSS_MEMORY_PATH, 'w', encoding='utf-8') as _mf:
+                        _mf.write("// memory.jcross — 体験の蓄積（動的に書き換わる）\n")
+                        _mf.write("// レベルリセット: フレーム=0\n\n")
+                        _mf.write("体験数 = 0\n体験リスト = []\n\n")
+                        _mf.write("// === 以下は実行中に追記される ===\n")
+                except Exception:
+                    pass
+                self._jcross_runtime = JCrossRuntime()
+                self._jcross_runtime.load(_JCROSS_SOUL_PATH, _JCROSS_MEMORY_PATH)
+                print("JCROSS_SOUL: loaded", file=sys.stderr)
+            except Exception as _e:
+                print(f"JCROSS_SOUL_INIT_ERR: {_e}", file=sys.stderr)
+                self._jcross_runtime = None
+        else:
+            self._jcross_runtime = None
+
+    def _jcross_record_experience(self, kind: str, details: dict):
+        """体験をバッファに蓄積（I/Oは_jcross_flush_memoryで一括書き出し）"""
+        if not self._jcross_runtime:
+            return
+        if not hasattr(self, '_jcross_exp_buffer'):
+            self._jcross_exp_buffer = []
+        exp = {"種類": kind}
+        exp.update(details)
+        self._jcross_exp_buffer.append(exp)
+
+    def _jcross_flush_memory(self):
+        """バッファの体験をmemory.jcrossに一括書き出し（20フレームに1回呼ぶ）"""
+        if not self._jcross_runtime or not hasattr(self, '_jcross_exp_buffer'):
+            return
+        if not self._jcross_exp_buffer:
+            return
+        try:
+            self._jcross_runtime.update_memory(self._jcross_exp_buffer)
+            self._jcross_exp_buffer = []
+        except Exception as e:
+            print(f"JCROSS_MEM_ERR: {e}", file=sys.stderr)
+
+    def _build_impulse_list(self):
+        """ripple衝動をjcross形式に変換"""
+        impulses = []
+        if hasattr(self, '_ripple_detours') and self._ripple_detours:
+            for i, tgt in enumerate(self._ripple_detours[:3]):
+                impulses.append({
+                    "種類": "探索",
+                    "優先度": 15 - i,
+                    "行動": self.action_queue[0] if self.action_queue else 0,
+                    "対象": list(tgt) if isinstance(tgt, tuple) else tgt
+                })
+        return impulses
+
+    def _build_jcross_experience_summary(self):
+        """体験をjcross向けの集約データに変換。
+        soul.jcrossが独自判断するための材料。"""
+        # 方向: 0=UP, 1=DOWN, 2=LEFT, 3=RIGHT
+        方向ブロック数 = [0, 0, 0, 0]
+        方向移動数 = [0, 0, 0, 0]
+        最近ブロック行動 = -1
+        壁開放フレーム = -1
+        壁開放方向 = -1
+
+        # cross_spaceの体験から集約
+        if self._cross_space:
+            for exp in self._cross_space.experiences[-50:]:  # 最新50件
+                aidx = exp.action_taken
+                if aidx < 4:
+                    if exp.event_type == 'blocked':
+                        方向ブロック数[aidx] += 1
+                        最近ブロック行動 = aidx
+                    elif exp.event_type == 'moved':
+                        方向移動数[aidx] += 1
+
+        # ルール学習から壁開放情報（直近の反応イベントのみ）
+        if self._cross_space:
+            for exp in reversed(self._cross_space.experiences[-20:]):
+                if exp.event_type in ('wall_opened', 'reaction') and exp.details.get('change_type') == 'wall_opened':
+                    壁開放フレーム = exp.frame
+                    if self._ctrl_pos:
+                        dr = exp.position[0] - self._ctrl_pos[0]
+                        dc = exp.position[1] - self._ctrl_pos[1]
+                        if abs(dr) > abs(dc):
+                            壁開放方向 = 0 if dr < 0 else 1
+                        else:
+                            壁開放方向 = 2 if dc < 0 else 3
+                    break  # 最新のものだけ
+
+        # 方向ごとの成功率（パーセント）
+        方向成功率 = [0, 0, 0, 0]
+        for i in range(4):
+            total = 方向ブロック数[i] + 方向移動数[i]
+            if total > 0:
+                方向成功率[i] = int(方向移動数[i] * 100 / total)
+            else:
+                方向成功率[i] = 50  # 未知 = 50%
+
+        # 未訪問方向を推定
+        未訪問方向 = []
+        if self._ctrl_pos and self._smap:
+            mvs = self._model.get_mv_actions()
+            for aidx, (dr, dc) in mvs.items():
+                if aidx < 4:
+                    nr, nc = self._ctrl_pos[0] + dr, self._ctrl_pos[1] + dc
+                    if 0 <= nr < 60 and 0 <= nc < 64:
+                        if (nr, nc) not in self._visited_positions:
+                            未訪問方向.append(aidx)
+
+        # Ripple衝動の方向
+        衝動方向 = -1
+        if hasattr(self, '_ripple_detours') and self._ripple_detours:
+            target = self._ripple_detours[0]
+            if isinstance(target, tuple) and self._ctrl_pos:
+                dr = target[0] - self._ctrl_pos[0]
+                dc = target[1] - self._ctrl_pos[1]
+                if abs(dr) > abs(dc):
+                    衝動方向 = 0 if dr < 0 else 1
+                else:
+                    衝動方向 = 2 if dc < 0 else 3
+
+        return {
+            "方向ブロック数": 方向ブロック数,
+            "方向移動数": 方向移動数,
+            "方向成功率": 方向成功率,
+            "最近ブロック行動": 最近ブロック行動,
+            "壁開放フレーム": 壁開放フレーム,
+            "壁開放方向": 壁開放方向,
+            "未訪問方向": 未訪問方向 if 未訪問方向 else [-1],
+            "衝動方向": 衝動方向,
+            "訪問済み数": len(self._visited_positions),
+        }
+
     def _observe(self, grid):
         snap = self.sensor.observe(grid); self._snap = snap; return snap
 
@@ -856,9 +1001,28 @@ class CrossResonanceV26(Agent):
                     self._last_progress_frame = self._frame
                 except Exception:
                     pass
+                # 体験記録: 移動（10フレームに1回）
+                if self._frame % 10 == 0 and self._ctrl_pos:
+                    try:
+                        _g = np.array(grid)
+                        _color_at_pos = int(_g[self._ctrl_pos[0], self._ctrl_pos[1]]) if self._ctrl_pos[0] < 64 else 0
+                        self._jcross_record_experience("移動", {
+                            "フレーム": self._frame,
+                            "位置": list(self._ctrl_pos),
+                            "行動": self._last_aidx,
+                            "色": _color_at_pos,
+                        })
+                    except Exception:
+                        pass
             if self._smap and ctrl_mv == (0,0) and self._ctrl_pos:
                 known_mv = self._model.get_movement(self._last_aidx)
                 if known_mv != (0,0):
+                    # 体験記録: ブロック（毎回）
+                    self._jcross_record_experience("ブロック", {
+                        "フレーム": self._frame,
+                        "位置": list(self._ctrl_pos),
+                        "行動": self._last_aidx,
+                    })
                     for dr, dc in self._ctrl_offsets:
                         self._smap.mark_wall(self._ctrl_pos[0]+known_mv[0]+dr, self._ctrl_pos[1]+known_mv[1]+dc)
                     if self._cross_space and self._ctrl_pos:
@@ -879,6 +1043,12 @@ class CrossResonanceV26(Agent):
                 reaction = self._monitor.check(snap)
                 if reaction and reaction['total'] >= 3:
                     print(f"REACTION: f={self._frame} {reaction['total']} changes — replanning", file=sys.stderr)
+                    # 体験記録: 反応（毎回）
+                    self._jcross_record_experience("反応", {
+                        "フレーム": self._frame,
+                        "位置": list(self._ctrl_pos) if self._ctrl_pos else [32, 32],
+                        "変化数": reaction['total'],
+                    })
                     route = self._make_plan(grid, snap, budget)
                     self.action_queue = route; self._replan_cooldown = 5
                 if reaction and self._reaction_analyzer and self.prev_grid is not None:
@@ -904,6 +1074,13 @@ class CrossResonanceV26(Agent):
                                       f"trigger={learned.trigger_type} confirmed={learned.confirmed} "
                                       f"enables_path={learned.enables_path} "
                                       f"region={learned.trigger_region}", file=sys.stderr)
+                                # 体験記録: 壁開放（enables_pathの場合）
+                                if learned.enables_path:
+                                    self._jcross_record_experience("壁開放", {
+                                        "フレーム": self._frame,
+                                        "位置": list(self._ctrl_pos) if self._ctrl_pos else [32, 32],
+                                        "領域": list(learned.effect_region) if learned.effect_region else [],
+                                    })
                                 # If wall_opened, mark the opened cells as passable
                                 if learned.enables_path and learned.effect_region and self._smap:
                                     er = learned.effect_region
@@ -993,6 +1170,53 @@ class CrossResonanceV26(Agent):
                     except Exception:
                         pass
                 self._last_click = None
+
+        # ========================================
+        # jcross体験バッファフラッシュ（20フレームに1回）
+        # ========================================
+        if self._frame % 20 == 0 and self._frame > 0:
+            self._jcross_flush_memory()
+
+        # ========================================
+        # 全フェーズjcross注入 (Phase 3で有効化。現在はexecuteフェーズのみ)
+        # ========================================
+        if False and self._jcross_runtime and self._jcross_runtime.is_available:
+            try:
+                phase_map = {'observe': '観察', 'probe': '探索', 'plan': '計画',
+                             'execute': '実行', 'click_probe': 'クリック探索'}
+                jp_phase = phase_map.get(self._phase, '実行')
+                _pos = list(self._ctrl_pos) if self._ctrl_pos else [32, 32]
+                _next_from_queue = self.action_queue[0] if self.action_queue else -1
+                _fallback_aidx = _next_from_queue if _next_from_queue >= 0 else (
+                    list(self._model.get_mv_actions().keys())[0]
+                    if self._model.get_mv_actions() else 0
+                )
+                self._jcross_runtime.inject_all({
+                    "フェーズ": jp_phase,
+                    "自分の位置": _pos,
+                    "フレーム番号": self._frame,
+                    "前回の行動": self._last_aidx,
+                    "移動したか": bool(self._ctrl_pos != self._prev_ctrl) if self._prev_ctrl else False,
+                    "差分あり": bool(snap.diff is not None and snap.diff.has_changes) if snap else False,
+                    "利用可能行動": list(self._model.available),
+                    "走路の色": list(self._probe_corridor_colors),
+                    "壁の色": [],
+                    "スタック回数": self._stuck_counter,
+                    "クリックゲーム": bool(self._model.is_click_game),
+                    "行動キュー": list(self.action_queue[:5]),
+                    "探索キュー": list(self._probe_queue) if hasattr(self, '_probe_queue') and self._probe_queue else [],
+                    "衝動リスト": self._build_impulse_list(),
+                    "経路先頭": _next_from_queue,
+                    "フォールバック": _fallback_aidx,
+                })
+                if self._phase != 'execute':
+                    # execute以外のフェーズ: jcrossの決定をログに出すのみ
+                    jcross_log_aidx = self._jcross_runtime.decide()
+                    # Pythonがこのフェーズでどう行動するかは後続のロジック
+                    # ここではpython_wouldは未定（フェーズ処理前）なのでN/Aとする
+                    print(f"JCROSS: phase={jp_phase} decide={jcross_log_aidx} python_would=N/A", file=sys.stderr)
+            except Exception as _jce:
+                print(f"JCROSS_INJECT_ERR: {_jce}", file=sys.stderr)
 
         # OBSERVE
         if self._phase == 'observe':
@@ -1137,6 +1361,22 @@ class CrossResonanceV26(Agent):
                 self.action_queue = route
             self._phase = 'execute'
 
+        # 動的ルール書き換え: スタックが20回になったらスタック脱出ルールを積極化
+        if self._stuck_counter == 20 and self._jcross_runtime:
+            _new_stuck_rule = '''関数 スタック脱出() {
+  // 体験から学んだ: 20回スタックした。より積極的に脱出
+  もし スタック回数 > 5 {
+    余り = (フレーム番号 + 前回の行動) % 4
+    返す 余り
+  }
+  返す -1
+}'''
+            try:
+                self._jcross_runtime.rewrite_rule("スタック脱出", _new_stuck_rule)
+                print(f"JCROSS_REWRITE: スタック脱出ルールを積極化 frame={self._frame}", file=sys.stderr)
+            except Exception as _rwe:
+                print(f"JCROSS_REWRITE_ERR: {_rwe}", file=sys.stderr)
+
         # EXECUTE — queue empty → replan
         if self._phase == 'execute' and not self.action_queue and not self._model.is_click_game:
             if self._replan_cooldown <= 0:
@@ -1216,7 +1456,71 @@ class CrossResonanceV26(Agent):
                     pass
                 a = GameAction.ACTION6; a.set_data({"x": 32, "y": 32}); a.reasoning = "fallback"; return a
         else:
-            if self.action_queue:
+            # Phase 2: jcross soul決定を試みる（executeフェーズのみ実際に使用）
+            jcross_aidx = -1
+            # Pythonフォールバックの計算（ログ用）
+            _python_aidx = self.action_queue[0] if self.action_queue else (
+                list(self._model.get_mv_actions().keys())[0] if self._model.get_mv_actions() else 0
+            )
+            if self._jcross_runtime and self._jcross_runtime.is_available and self._phase == 'execute':
+                try:
+                    # 体験集約データをjcrossに注入
+                    _exp_summary = self._build_jcross_experience_summary()
+                    _pos = list(self._ctrl_pos) if self._ctrl_pos else [32, 32]
+                    _next_from_queue = self.action_queue[0] if self.action_queue else -1
+                    _fallback_aidx = _next_from_queue if _next_from_queue >= 0 else (
+                        list(self._model.get_mv_actions().keys())[0] if self._model.get_mv_actions() else 0
+                    )
+                    self._jcross_runtime.inject_all({
+                        "フェーズ": "実行",
+                        "自分の位置": _pos,
+                        "フレーム番号": self._frame,
+                        "前回の行動": self._last_aidx,
+                        "移動したか": bool(self._ctrl_pos != self._prev_ctrl) if self._prev_ctrl else False,
+                        "差分あり": bool(snap.diff is not None and snap.diff.has_changes) if snap else False,
+                        "利用可能行動": list(self._model.available),
+                        "走路の色": list(self._probe_corridor_colors),
+                        "スタック回数": self._stuck_counter,
+                        "クリックゲーム": bool(self._model.is_click_game),
+                        "行動キュー": list(self.action_queue[:5]),
+                        "衝動リスト": self._build_impulse_list(),
+                        "経路先頭": _next_from_queue,
+                        "フォールバック": _fallback_aidx,
+                        # ===== 体験集約データ（jcross独自判断の材料）=====
+                        "方向ブロック数": _exp_summary["方向ブロック数"],
+                        "方向移動数": _exp_summary["方向移動数"],
+                        "方向成功率": _exp_summary["方向成功率"],
+                        "最近ブロック行動": _exp_summary["最近ブロック行動"],
+                        "壁開放フレーム": _exp_summary["壁開放フレーム"],
+                        "壁開放方向": _exp_summary["壁開放方向"],
+                        "未訪問方向": _exp_summary["未訪問方向"],
+                        "衝動方向": _exp_summary["衝動方向"],
+                        "訪問済み数": _exp_summary["訪問済み数"],
+                    })
+                    jcross_aidx = self._jcross_runtime.decide()
+                    if jcross_aidx >= 0 and jcross_aidx < len(ALL_ACTIONS):
+                        # jcrossの決定がPythonと違う場合: jcrossを採用（体験ベース）
+                        if jcross_aidx != _python_aidx:
+                            # jcrossの独自判断を採用
+                            print(f"JCROSS_OVERRIDE: jcross={jcross_aidx} python={_python_aidx} frame={self._frame}", file=sys.stderr)
+                        if self.action_queue and self.action_queue[0] == jcross_aidx:
+                            self.action_queue.pop(0)
+                        elif self.action_queue and jcross_aidx != self.action_queue[0]:
+                            # jcrossがキューと違う行動を選んだ — キューはそのまま残す
+                            # 次のフレームでPythonが再計画するのを待つ
+                            pass
+                        print(f"JCROSS: phase=実行 decide={jcross_aidx} python_would={_python_aidx}", file=sys.stderr)
+                    else:
+                        print(f"JCROSS: phase=実行 decide={jcross_aidx}(fallback) python_would={_python_aidx}", file=sys.stderr)
+                        jcross_aidx = -1
+                except Exception as _je:
+                    print(f"JCROSS_ERR: {_je}", file=sys.stderr)
+                    jcross_aidx = -1
+
+            # jcrossの判断を信頼する
+            if jcross_aidx >= 0:
+                aidx = jcross_aidx
+            elif self.action_queue:
                 aidx = self.action_queue.pop(0)
             else:
                 mvs = self._model.get_mv_actions()
